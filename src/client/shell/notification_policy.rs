@@ -66,9 +66,9 @@ impl ClientShellState {
         let Some(notification) = self.visible_notification.as_ref() else {
             return;
         };
-        if notification.event.pane_id.is_some()
-            && !self.endpoint_is_online(&notification.endpoint_id)
-        {
+        let has_click_target =
+            notification.event.pane_id.is_some() || notification.event.plugin_action.is_some();
+        if has_click_target && !self.endpoint_is_online(&notification.endpoint_id) {
             let label = self.endpoint_label(&notification.endpoint_id).to_owned();
             self.receive_endpoint_unavailable(format!("{label} is unavailable"));
             outcome.repaint = true;
@@ -80,6 +80,23 @@ impl ClientShellState {
             .expect("checked visible notification");
         self.promote_queued_notification(std::time::Instant::now());
         outcome.repaint = true;
+        if let Some(action_id) = notification.event.plugin_action {
+            // Plugin actions run only on the active endpoint. Revisit when a
+            // remote endpoint needs its plugin actions invoked from a toast.
+            if notification.endpoint_id == self.active_endpoint_id {
+                self.push_endpoint_method(
+                    crate::api::schema::Method::PluginActionInvoke(
+                        crate::api::schema::PluginActionInvokeParams {
+                            action_id,
+                            plugin_id: None,
+                            context: None,
+                        },
+                    ),
+                    outcome,
+                );
+            }
+            return;
+        }
         let Some(pane_id) = notification.event.pane_id else {
             return;
         };
