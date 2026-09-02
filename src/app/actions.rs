@@ -1414,6 +1414,7 @@ impl AppState {
                         context: crate::update::update_install_instruction(&install_command),
                         position: None,
                         target: None,
+                        plugin_action: None,
                     });
                 }
                 Vec::new()
@@ -1446,6 +1447,7 @@ impl AppState {
                         context: agent_list,
                         position: None,
                         target: None,
+                        plugin_action: None,
                     });
                 }
                 Vec::new()
@@ -1961,6 +1963,7 @@ impl AppState {
                     workspace_id: workspace_id.clone(),
                     pane_id,
                 }),
+                plugin_action: None,
             }
         };
         let toast = (!is_active_tab).then(build_toast);

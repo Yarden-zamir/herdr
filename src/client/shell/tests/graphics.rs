@@ -163,6 +163,7 @@ fn notifications_and_clipboard_feedback_only_cover_their_drawn_corners() {
                     tab_id: None,
                     pane_id: None,
                     position: Some(position),
+                    plugin_action: None,
                 },
                 deadline: std::time::Instant::now(),
             });
