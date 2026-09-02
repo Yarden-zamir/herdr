@@ -122,6 +122,7 @@ impl HeadlessServer {
                 tab_id: Some(tab_id),
                 pane_id: Some(public_pane_id),
                 position: None,
+                plugin_action: None,
             },
         ))
     }
@@ -263,6 +264,27 @@ impl HeadlessServer {
             .body
             .as_deref()
             .and_then(|body| sanitize_notification_text(body, 240));
+        let (target, plugin_action) = match params.action {
+            None => (None, None),
+            Some(api::schema::NotificationAction::PluginAction { action_id }) => {
+                (None, Some(action_id))
+            }
+            Some(api::schema::NotificationAction::FocusPane { pane_id }) => {
+                match self.app.resolve_public_pane(&pane_id) {
+                    Some(target) => (Some(target), None),
+                    None => {
+                        return serde_json::to_string(&api::schema::ErrorResponse {
+                            id,
+                            error: api::schema::ErrorBody {
+                                code: "pane_not_found".into(),
+                                message: format!("pane {pane_id} not found"),
+                            },
+                        })
+                        .unwrap_or_else(|_| "{}".to_string());
+                    }
+                }
+            }
+        };
         let has_client_shell = self.clients.values().any(ClientConnection::is_shell_client);
         if !has_client_shell {
             let reason = if self.app.state.toast_config.delivery == config::ToastDelivery::Off {
@@ -291,10 +313,11 @@ impl HeadlessServer {
                 body,
                 sound,
                 agent: None,
-                workspace_id: None,
-                tab_id: None,
-                pane_id: None,
+                workspace_id: target.as_ref().map(|target| target.workspace_id.clone()),
+                tab_id: target.as_ref().map(|target| target.tab_id.clone()),
+                pane_id: target.map(|target| target.public_pane_id),
                 position: params.position,
+                plugin_action,
             },
         ));
         if shown {
@@ -574,6 +597,7 @@ impl HeadlessServer {
                         tab_id: None,
                         pane_id: None,
                         position: None,
+                        plugin_action: None,
                     },
                 ));
 

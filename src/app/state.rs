@@ -724,6 +724,8 @@ pub struct ToastNotification {
     pub context: String,
     pub position: Option<crate::config::ToastHerdrPosition>,
     pub target: Option<ToastTarget>,
+    /// Plugin action to invoke when the toast is clicked.
+    pub plugin_action: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

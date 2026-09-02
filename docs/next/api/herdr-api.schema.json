@@ -2348,8 +2348,57 @@
           ],
           "type": "object"
         },
+        "NotificationAction": {
+          "oneOf": [
+            {
+              "description": "Focus the pane.",
+              "properties": {
+                "pane_id": {
+                  "type": "string"
+                },
+                "type": {
+                  "const": "focus_pane",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "pane_id"
+              ],
+              "type": "object"
+            },
+            {
+              "description": "Invoke a plugin action, as `plugin.action.invoke` does.",
+              "properties": {
+                "action_id": {
+                  "type": "string"
+                },
+                "type": {
+                  "const": "plugin_action",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "action_id"
+              ],
+              "type": "object"
+            }
+          ]
+        },
         "NotificationShowParams": {
           "properties": {
+            "action": {
+              "anyOf": [
+                {
+                  "$ref": "#/schemas/request/$defs/NotificationAction"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "What a click on the in-app toast does."
+            },
             "body": {
               "type": [
                 "string",

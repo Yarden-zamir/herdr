@@ -359,16 +359,16 @@ true when either zoom state or focus changed. Reason values are `single_pane`,
 The CLI wrapper for `notification.show` is:
 
 ```bash
-herdr notification show "build failed" --body "api workspace" --position top-left --sound request
+herdr notification show "build failed" --body "api workspace" --position top-left --sound request --focus-pane w1:p2
 ```
 
 Show a user notification through the configured toast delivery:
 
 ```json
-{"id":"req_notify","method":"notification.show","params":{"title":"build failed","body":"api workspace","position":"top-left","sound":"request"}}
+{"id":"req_notify","method":"notification.show","params":{"title":"build failed","body":"api workspace","position":"top-left","sound":"request","action":{"type":"focus_pane","pane_id":"w1:p2"}}}
 ```
 
-`title` is required and must contain visible text after control characters and repeated whitespace are removed. `body` is optional. Herdr collapses newlines, tabs, carriage returns, and repeated whitespace into spaces, then trims notification text to 80 characters for `title` and 240 characters for `body`. An empty sanitized `title` returns `invalid_params`. `position` is optional and applies only when `ui.toast.delivery = "herdr"`; desktop positions are relative to the full Herdr frame, and omitted positions use `ui.toast.herdr.position`. Terminal, system, and off delivery ignore `position`. `sound` is optional and can be `none`, `done`, or `request`; it defaults to `none` and plays only when the notification is shown.
+`title` is required and must contain visible text after control characters and repeated whitespace are removed. `body` is optional. Herdr collapses newlines, tabs, carriage returns, and repeated whitespace into spaces, then trims notification text to 80 characters for `title` and 240 characters for `body`. An empty sanitized `title` returns `invalid_params`. `position` is optional and applies only when `ui.toast.delivery = "herdr"`; desktop positions are relative to the full Herdr frame, and omitted positions use `ui.toast.herdr.position`. Terminal, system, and off delivery ignore `position`. `sound` is optional and can be `none`, `done`, or `request`; it defaults to `none` and plays only when the notification is shown. `action` is optional and makes the in-app toast clickable. `{"type":"focus_pane","pane_id":"w1:p2"}` focuses that pane on click, the same way agent notifications do; the toast is suppressed while that pane's tab is active, and an unknown `pane_id` returns `pane_not_found`. `{"type":"plugin_action","action_id":"acme.ci.open"}` invokes that plugin action on click, as `plugin.action.invoke` does; the action is resolved at click time, so an unknown action fails there.
 
 The response reports whether anything was shown:
 

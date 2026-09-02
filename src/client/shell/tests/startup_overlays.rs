@@ -552,6 +552,7 @@ fn config_diagnostic_offsets_only_the_pane_rows_it_overlaps() {
             tab_id: None,
             pane_id: None,
             position: Some(crate::config::ToastHerdrPosition::TopRight),
+            plugin_action: None,
         },
         deadline: std::time::Instant::now(),
     });

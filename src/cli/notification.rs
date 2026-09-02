@@ -1,4 +1,6 @@
-use crate::api::schema::{Method, NotificationShowParams, NotificationShowSound, Request};
+use crate::api::schema::{
+    Method, NotificationAction, NotificationShowParams, NotificationShowSound, Request,
+};
 use crate::config::ToastHerdrPosition;
 
 pub(super) fn run_notification_command(args: &[String]) -> std::io::Result<i32> {
@@ -25,7 +27,7 @@ fn notification_show(args: &[String]) -> std::io::Result<i32> {
         Ok(params) => params,
         Err(NotificationShowArgError::Usage) => {
             eprintln!(
-                "usage: herdr notification show <title> [--body TEXT] [--position top-left|top-right|bottom-left|bottom-right] [--sound none|done|request]"
+                "usage: herdr notification show <title> [--body TEXT] [--position top-left|top-right|bottom-left|bottom-right] [--sound none|done|request] [--focus-pane ID|--plugin-action ID]"
             );
             return Ok(2);
         }
@@ -60,6 +62,7 @@ fn parse_notification_show_args(
     let mut body = None;
     let mut position = None;
     let mut sound = NotificationShowSound::None;
+    let mut action = None;
     let mut index = 1;
     while index < args.len() {
         match args[index].as_str() {
@@ -90,6 +93,28 @@ fn parse_notification_show_args(
                 sound = parse_notification_sound(value)?;
                 index += 2;
             }
+            flag @ ("--focus-pane" | "--plugin-action") => {
+                let Some(value) = args.get(index + 1) else {
+                    return Err(NotificationShowArgError::Message(format!(
+                        "missing value for {flag}"
+                    )));
+                };
+                if action.is_some() {
+                    return Err(NotificationShowArgError::Message(
+                        "--focus-pane and --plugin-action are mutually exclusive".into(),
+                    ));
+                }
+                action = Some(if flag == "--focus-pane" {
+                    NotificationAction::FocusPane {
+                        pane_id: value.clone(),
+                    }
+                } else {
+                    NotificationAction::PluginAction {
+                        action_id: value.clone(),
+                    }
+                });
+                index += 2;
+            }
             other => {
                 return Err(NotificationShowArgError::Message(format!(
                     "unknown option: {other}"
@@ -103,6 +128,7 @@ fn parse_notification_show_args(
         body,
         position,
         sound,
+        action,
     })
 }
 
@@ -134,7 +160,7 @@ fn parse_notification_sound(
 fn print_notification_help() {
     eprintln!("herdr notification commands:");
     eprintln!(
-        "  herdr notification show <title> [--body TEXT] [--position top-left|top-right|bottom-left|bottom-right] [--sound none|done|request]"
+        "  herdr notification show <title> [--body TEXT] [--position top-left|top-right|bottom-left|bottom-right] [--sound none|done|request] [--focus-pane ID|--plugin-action ID]"
     );
 }
 
@@ -156,6 +182,8 @@ mod tests {
             "top-right",
             "--sound",
             "request",
+            "--focus-pane",
+            "w1:p2",
         ]))
         .unwrap();
 
@@ -166,7 +194,38 @@ mod tests {
                 body: Some("api workspace".into()),
                 position: Some(ToastHerdrPosition::TopRight),
                 sound: NotificationShowSound::Request,
+                action: Some(NotificationAction::FocusPane {
+                    pane_id: "w1:p2".into(),
+                }),
             }
+        );
+    }
+
+    #[test]
+    fn notification_show_args_parse_plugin_action_and_reject_two_actions() {
+        let params =
+            parse_notification_show_args(&args(&["done", "--plugin-action", "acme.ci.open"]))
+                .unwrap();
+        assert_eq!(
+            params.action,
+            Some(NotificationAction::PluginAction {
+                action_id: "acme.ci.open".into(),
+            })
+        );
+
+        let error = parse_notification_show_args(&args(&[
+            "done",
+            "--plugin-action",
+            "acme.ci.open",
+            "--focus-pane",
+            "w1:p2",
+        ]))
+        .unwrap_err();
+        assert_eq!(
+            error,
+            NotificationShowArgError::Message(
+                "--focus-pane and --plugin-action are mutually exclusive".into()
+            )
         );
     }
 

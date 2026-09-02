@@ -933,7 +933,10 @@ impl ClientShellState {
             && self
                 .visible_notification
                 .as_ref()
-                .is_some_and(|notification| notification.event.pane_id.is_some())
+                .is_some_and(|notification| {
+                    notification.event.pane_id.is_some()
+                        || notification.event.plugin_action.is_some()
+                })
             && mouse.kind == MouseEventKind::Down(MouseButton::Left)
             && super::contains(self.hits.notification_toast, point)
         {
