@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Added
+- `pane.seen.set` / `agent.seen.set` (`herdr pane|agent mark-seen`, `herdr pane|agent mark-unseen`) set the pane `seen` flag directly: mark a finished agent unread again, or acknowledge a `done` agent without focusing it. `PaneInfo` and `AgentInfo` now expose `seen`.
+
 ## [0.9.3] - 2026-09-29
 
 This is a hotfix release for v0.9.2. See the v0.9.2 notes for the full feature release: https://github.com/herdrdev/herdr/releases/tag/v0.9.2
