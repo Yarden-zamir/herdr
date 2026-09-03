@@ -2,8 +2,9 @@ use std::time::{Duration, Instant};
 
 use crate::api::schema::{
     AgentPromptParams, AgentPromptWaitOptions, AgentReadParams, AgentRenameParams,
-    AgentSendKeysParams, AgentStartParams, AgentTarget, AgentWaitParams, EmptyParams, ErrorBody,
-    ErrorResponse, Method, PaneProcessInfoParams, PaneTarget, ReadFormat, ReadSource, Request,
+    AgentSeenSetParams, AgentSendKeysParams, AgentStartParams, AgentTarget, AgentWaitParams,
+    EmptyParams, ErrorBody, ErrorResponse, Method, PaneProcessInfoParams, PaneTarget, ReadFormat,
+    ReadSource, Request,
 };
 
 const AGENT_START_POLL_INTERVAL: Duration = Duration::from_millis(100);
@@ -23,6 +24,8 @@ pub(super) fn run_agent_command(args: &[String]) -> std::io::Result<i32> {
         "prompt" => agent_prompt(&args[1..]),
         "rename" => agent_rename(&args[1..]),
         "focus" => agent_focus(&args[1..]),
+        "mark-seen" => agent_seen_set(&args[1..], true),
+        "mark-unseen" => agent_seen_set(&args[1..], false),
         "wait" => agent_wait(&args[1..]),
         "attach" => agent_attach(&args[1..]),
         "start" => agent_start(&args[1..]),
@@ -483,6 +486,22 @@ fn agent_focus(args: &[String]) -> std::io::Result<i32> {
     })?)
 }
 
+fn agent_seen_set(args: &[String], seen: bool) -> std::io::Result<i32> {
+    let verb = if seen { "mark-seen" } else { "mark-unseen" };
+    let [target] = args else {
+        eprintln!("usage: herdr agent {verb} <target>");
+        return Ok(2);
+    };
+
+    super::print_response(&super::send_request(&Request {
+        id: format!("cli:agent:{verb}"),
+        method: Method::AgentSeenSet(AgentSeenSetParams {
+            target: target.clone(),
+            seen,
+        }),
+    })?)
+}
+
 fn agent_attach(args: &[String]) -> std::io::Result<i32> {
     let (target, takeover) =
         match super::parse_attach_target(args, "usage: herdr agent attach <target> [--takeover]") {
@@ -932,6 +951,8 @@ fn print_agent_help() {
     eprintln!("  herdr agent prompt <target> <text> [--wait] [--until STATUS]... [--timeout MS]");
     eprintln!("  herdr agent rename <target> <name>|--clear");
     eprintln!("  herdr agent focus <target>");
+    eprintln!("  herdr agent mark-seen <target>");
+    eprintln!("  herdr agent mark-unseen <target>");
     eprintln!("  herdr agent wait <target> [--until STATUS]... [--timeout MS]");
     eprintln!("  herdr agent attach <target> [--takeover]");
     eprintln!(

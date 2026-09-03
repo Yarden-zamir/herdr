@@ -323,6 +323,14 @@ pub struct PaneCurrentParams {
     pub caller_pane_id: Option<String>,
 }
 
+/// Set the pane `seen` flag. `seen: false` shows an idle pane as `done`
+/// again; `seen: true` acknowledges it without focusing it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PaneSeenSetParams {
+    pub pane_id: String,
+    pub seen: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PaneRenameParams {
     pub pane_id: String,
@@ -547,6 +555,9 @@ pub struct PaneInfo {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_agent: Option<String>,
     pub agent_status: AgentStatus,
+    /// False while an idle pane still shows as `done`. Missing on older servers.
+    #[serde(default = "super::common::default_true")]
+    pub seen: bool,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub state_labels: HashMap<String, String>,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]

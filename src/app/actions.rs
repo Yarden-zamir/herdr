@@ -542,6 +542,31 @@ impl AppState {
         changed
     }
 
+    /// Set the pane `seen` flag. Returns `Some(changed)`, or `None` when
+    /// the pane does not exist.
+    ///
+    /// No policy lives here. The flag only shows while the pane is idle
+    /// (`done` = idle and unseen), and `apply_pane_state_change` resets it
+    /// on the next state change, so a caller that sets it on a working
+    /// pane gets `changed = true` and no visible effect. Callers decide
+    /// whether that matters.
+    pub(crate) fn set_pane_seen(
+        &mut self,
+        ws_idx: usize,
+        pane_id: PaneId,
+        seen: bool,
+    ) -> Option<bool> {
+        let pane = self
+            .workspaces
+            .get_mut(ws_idx)?
+            .tabs
+            .iter_mut()
+            .find_map(|tab| tab.panes.get_mut(&pane_id))?;
+        let changed = pane.seen != seen;
+        pane.seen = seen;
+        Some(changed)
+    }
+
     pub fn move_workspace(&mut self, source_idx: usize, insert_idx: usize) -> bool {
         if source_idx >= self.workspaces.len() || insert_idx > self.workspaces.len() {
             return false;
