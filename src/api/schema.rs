@@ -131,6 +131,8 @@ pub enum Method {
     AgentViewClear(AgentViewClearParams),
     #[serde(rename = "agent.focus")]
     AgentFocus(AgentTarget),
+    #[serde(rename = "agent.seen.set")]
+    AgentSeenSet(AgentSeenSetParams),
     #[serde(rename = "agent.start")]
     AgentStart(AgentStartParams),
     #[serde(rename = "agent.prompt")]
@@ -181,6 +183,8 @@ pub enum Method {
     PaneGet(PaneTarget),
     #[serde(rename = "pane.focus")]
     PaneFocus(PaneTarget),
+    #[serde(rename = "pane.seen.set")]
+    PaneSeenSet(PaneSeenSetParams),
     #[serde(rename = "pane.input.set")]
     PaneInputSet(PaneInputSetParams),
     #[serde(rename = "pane.link.activate")]

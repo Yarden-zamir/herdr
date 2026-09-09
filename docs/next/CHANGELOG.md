@@ -3,7 +3,7 @@
 ## Unreleased
 
 ### Added
-- `notification.show` and `herdr notification show` can now carry a click action: focus a pane (`--focus-pane`) or invoke a plugin action (`--plugin-action`).
+
 
 ## [0.9.0] - 2026-09-07
 

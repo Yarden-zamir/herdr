@@ -750,6 +750,58 @@ impl App {
         self.event_hub.push(event);
     }
 
+    /// Public agent status of a pane, folded from terminal state and `seen`.
+    pub(crate) fn pane_agent_status_now(
+        &self,
+        ws_idx: usize,
+        pane_id: crate::layout::PaneId,
+    ) -> Option<crate::api::schema::AgentStatus> {
+        let pane = self.state.workspaces.get(ws_idx)?.pane_state(pane_id)?;
+        let terminal = self.state.terminals.get(&pane.attached_terminal_id)?;
+        Some(pane_agent_status(terminal.state, pane.seen))
+    }
+
+    /// Emit `pane.agent_status_changed` when the public status differs from
+    /// `previous`. Use it after a change that touches only the pane `seen`
+    /// flag, which bypasses `apply_pane_state_update`.
+    pub(crate) fn emit_pane_agent_status_if_changed(
+        &mut self,
+        ws_idx: usize,
+        pane_id: crate::layout::PaneId,
+        previous: Option<crate::api::schema::AgentStatus>,
+    ) {
+        let Some(ws) = self.state.workspaces.get(ws_idx) else {
+            return;
+        };
+        let Some(pane) = ws.pane_state(pane_id) else {
+            return;
+        };
+        let Some(terminal) = self.state.terminals.get(&pane.attached_terminal_id) else {
+            return;
+        };
+        let agent_status = pane_agent_status(terminal.state, pane.seen);
+        if previous == Some(agent_status) {
+            return;
+        }
+        let Some(public_pane_id) = self.public_pane_id(ws_idx, pane_id) else {
+            return;
+        };
+        let presentation = terminal.effective_presentation();
+        let event = crate::api::schema::EventEnvelope {
+            event: crate::api::schema::EventKind::PaneAgentStatusChanged,
+            data: crate::api::schema::EventData::PaneAgentStatusChanged {
+                pane_id: public_pane_id,
+                workspace_id: self.public_workspace_id(ws_idx),
+                agent_status,
+                agent: terminal.effective_agent_label().map(str::to_string),
+                title: presentation.title,
+                display_agent: presentation.display_agent,
+                state_labels: presentation.state_labels,
+            },
+        };
+        self.emit_event(event);
+    }
+
     pub(crate) fn emit_pane_updated(&mut self, ws_idx: usize, pane_id: crate::layout::PaneId) {
         if let Some(pane) = self.pane_info(ws_idx, pane_id) {
             self.emit_event(crate::api::schema::EventEnvelope {
@@ -1056,6 +1108,7 @@ impl App {
             Method::AgentList(_) => return self.handle_agent_list(request.id),
             Method::AgentGet(target) => return self.handle_agent_get(request.id, target),
             Method::AgentFocus(target) => return self.handle_agent_focus(request.id, target),
+            Method::AgentSeenSet(params) => return self.handle_agent_seen_set(request.id, params),
             Method::AgentRename(params) => return self.handle_agent_rename(request.id, params),
             Method::AgentViewSet(params) => return self.handle_agent_view_set(request.id, params),
             Method::AgentViewClear(params) => {
@@ -1117,6 +1170,7 @@ impl App {
             Method::PaneCurrent(params) => return self.handle_pane_current(request.id, params),
             Method::PaneGet(target) => return self.handle_pane_get(request.id, target),
             Method::PaneFocus(target) => return self.handle_pane_focus(request.id, target),
+            Method::PaneSeenSet(params) => return self.handle_pane_seen_set(request.id, params),
             Method::PaneInputSet(params) => return self.handle_pane_input_set(request.id, params),
             Method::PaneLinkActivate(params) => {
                 return self.handle_pane_link_activate(request.id, params);

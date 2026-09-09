@@ -11,10 +11,10 @@ use crate::api::schema::{
     PaneProcessInfoProcess, PaneReadParams, PaneReadResult, PaneReleaseAgentParams,
     PaneRenameParams, PaneReportAgentParams, PaneReportAgentSessionParams,
     PaneReportMetadataParams, PaneResizeParams, PaneResizeReason, PaneResizeResult,
-    PaneScrollParams, PaneSelectionReadParams, PaneSendInputParams, PaneSendKeysParams,
-    PaneSendTextParams, PaneSplitParams, PaneSwapParams, PaneSwapReason, PaneSwapResult,
-    PaneTarget, PaneTextPoint, PaneTextRange, PaneZoomMode, PaneZoomParams, PaneZoomReason,
-    PaneZoomResult, ResponseResult,
+    PaneScrollParams, PaneSeenSetParams, PaneSelectionReadParams, PaneSendInputParams,
+    PaneSendKeysParams, PaneSendTextParams, PaneSplitParams, PaneSwapParams, PaneSwapReason,
+    PaneSwapResult, PaneTarget, PaneTextPoint, PaneTextRange, PaneZoomMode, PaneZoomParams,
+    PaneZoomReason, PaneZoomResult, ResponseResult,
 };
 use crate::app::actions::{PaneZoomCommand, PaneZoomNoopReason};
 use crate::app::App;
@@ -1458,6 +1458,21 @@ impl App {
             crate::api::schema::PaneRightClickTarget::Pane
         );
         encode_success(id, ResponseResult::Ok {})
+    }
+
+    pub(super) fn handle_pane_seen_set(&mut self, id: String, params: PaneSeenSetParams) -> String {
+        let Some((ws_idx, pane_id)) = self.parse_pane_id(&params.pane_id) else {
+            return pane_not_found(id, &params.pane_id);
+        };
+        let previous_status = self.pane_agent_status_now(ws_idx, pane_id);
+        let Some(changed) = self.state.set_pane_seen(ws_idx, pane_id, params.seen) else {
+            return pane_not_found(id, &params.pane_id);
+        };
+        self.emit_pane_agent_status_if_changed(ws_idx, pane_id, previous_status);
+        let Some(pane) = self.pane_info(ws_idx, pane_id) else {
+            return pane_not_found(id, &params.pane_id);
+        };
+        encode_success(id, ResponseResult::PaneSeenSet { pane, changed })
     }
 
     pub(super) fn handle_pane_rename(&mut self, id: String, params: PaneRenameParams) -> String {
@@ -4488,5 +4503,148 @@ mod tests {
 
             assert_eq!(metadata_error_code(&response), "invalid_metadata_ttl");
         }
+    }
+
+    fn app_with_idle_pane_in_background_workspace() -> (App, String) {
+        let mut app = app_with_linked_worktree();
+        app.state.workspaces.push(Workspace::test_new("other"));
+        app.state.ensure_test_terminals();
+        app.state.active = Some(0);
+        app.state.selected = 0;
+        app.state.outer_terminal_focus = Some(true);
+        let pane_id = app.state.workspaces[1].tabs[0].root_pane;
+        let terminal_id = app.state.workspaces[1].tabs[0].panes[&pane_id]
+            .attached_terminal_id
+            .clone();
+        app.state.terminals.get_mut(&terminal_id).unwrap().state = crate::detect::AgentState::Idle;
+        let public_pane_id = app.public_pane_id(1, pane_id).unwrap();
+        (app, public_pane_id)
+    }
+
+    fn pane_seen_set(app: &mut App, pane_id: &str, seen: bool) -> (PaneInfo, bool) {
+        let response = app.handle_pane_seen_set(
+            "req".into(),
+            PaneSeenSetParams {
+                pane_id: pane_id.to_string(),
+                seen,
+            },
+        );
+        let success: SuccessResponse = serde_json::from_str(&response).unwrap();
+        let ResponseResult::PaneSeenSet { pane, changed } = success.result else {
+            panic!("expected pane seen set response");
+        };
+        (pane, changed)
+    }
+
+    fn status_events_for(app: &App, pane_id: &str) -> Vec<crate::api::schema::AgentStatus> {
+        app.event_hub
+            .events_after(0)
+            .into_iter()
+            .filter_map(|(_, envelope)| match envelope.data {
+                crate::api::schema::EventData::PaneAgentStatusChanged {
+                    pane_id: event_pane_id,
+                    agent_status,
+                    ..
+                } if event_pane_id == pane_id => Some(agent_status),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn api_pane_seen_set_false_turns_idle_pane_done_and_emits_status() {
+        let (mut app, public_pane_id) = app_with_idle_pane_in_background_workspace();
+
+        let (pane, changed) = pane_seen_set(&mut app, &public_pane_id, false);
+
+        assert!(changed);
+        assert!(!pane.seen);
+        assert_eq!(pane.agent_status, crate::api::schema::AgentStatus::Done);
+        assert_eq!(
+            status_events_for(&app, &public_pane_id),
+            vec![crate::api::schema::AgentStatus::Done]
+        );
+    }
+
+    #[test]
+    fn api_pane_seen_set_is_idempotent_and_silent_when_unchanged() {
+        let (mut app, public_pane_id) = app_with_idle_pane_in_background_workspace();
+        pane_seen_set(&mut app, &public_pane_id, false);
+        let before = app.event_hub.current_sequence();
+
+        let (pane, changed) = pane_seen_set(&mut app, &public_pane_id, false);
+
+        assert!(!changed);
+        assert!(!pane.seen);
+        assert_eq!(app.event_hub.current_sequence(), before);
+    }
+
+    #[test]
+    fn api_pane_seen_set_true_acknowledges_done_pane_without_focusing() {
+        let (mut app, public_pane_id) = app_with_idle_pane_in_background_workspace();
+        pane_seen_set(&mut app, &public_pane_id, false);
+
+        let (pane, changed) = pane_seen_set(&mut app, &public_pane_id, true);
+
+        assert!(changed);
+        assert!(pane.seen);
+        assert_eq!(pane.agent_status, crate::api::schema::AgentStatus::Idle);
+        assert_eq!(
+            app.state.active,
+            Some(0),
+            "acknowledging must not move focus"
+        );
+        assert_eq!(
+            status_events_for(&app, &public_pane_id),
+            vec![
+                crate::api::schema::AgentStatus::Done,
+                crate::api::schema::AgentStatus::Idle
+            ]
+        );
+    }
+
+    #[test]
+    fn api_pane_seen_set_on_focused_visible_pane_is_allowed() {
+        let (mut app, public_pane_id) = app_with_idle_pane_in_background_workspace();
+        app.state.switch_workspace(1);
+
+        let (pane, changed) = pane_seen_set(&mut app, &public_pane_id, false);
+
+        assert!(changed);
+        assert_eq!(pane.agent_status, crate::api::schema::AgentStatus::Done);
+    }
+
+    #[test]
+    fn api_pane_seen_set_on_working_pane_stores_flag_without_status_change() {
+        let (mut app, public_pane_id) = app_with_idle_pane_in_background_workspace();
+        let (_, pane_id) = app.parse_pane_id(&public_pane_id).unwrap();
+        let terminal_id = app.state.workspaces[1].tabs[0].panes[&pane_id]
+            .attached_terminal_id
+            .clone();
+        app.state.terminals.get_mut(&terminal_id).unwrap().state =
+            crate::detect::AgentState::Working;
+
+        let (pane, changed) = pane_seen_set(&mut app, &public_pane_id, false);
+
+        assert!(changed);
+        assert!(!pane.seen);
+        assert_eq!(pane.agent_status, crate::api::schema::AgentStatus::Working);
+        assert!(status_events_for(&app, &public_pane_id).is_empty());
+    }
+
+    #[test]
+    fn api_pane_seen_set_reports_unknown_pane() {
+        let (mut app, _) = app_with_idle_pane_in_background_workspace();
+
+        let response = app.handle_pane_seen_set(
+            "req".into(),
+            PaneSeenSetParams {
+                pane_id: "w9Z:p9".into(),
+                seen: false,
+            },
+        );
+
+        let error: ErrorResponse = serde_json::from_str(&response).unwrap();
+        assert_eq!(error.error.code, "pane_not_found");
     }
 }

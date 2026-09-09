@@ -3,8 +3,8 @@ use std::time::Duration;
 use bytes::Bytes;
 
 use crate::api::schema::{
-    AgentPromptParams, AgentRenameParams, AgentSendKeysParams, AgentStartParams, AgentTarget,
-    PaneReadResult, ResponseResult,
+    AgentPromptParams, AgentRenameParams, AgentSeenSetParams, AgentSendKeysParams,
+    AgentStartParams, AgentTarget, PaneReadResult, ResponseResult,
 };
 use crate::app::App;
 
@@ -51,6 +51,29 @@ impl App {
         };
 
         encode_success(id, ResponseResult::AgentInfo { agent })
+    }
+
+    pub(super) fn handle_agent_seen_set(
+        &mut self,
+        id: String,
+        params: AgentSeenSetParams,
+    ) -> String {
+        let resolved = match self.resolve_agent_target(&params.target) {
+            Ok(resolved) => resolved,
+            Err(err) => return encode_error_body(id, self.agent_target_error_body(err)),
+        };
+        let previous_status = self.pane_agent_status_now(resolved.ws_idx, resolved.pane_id);
+        let Some(changed) =
+            self.state
+                .set_pane_seen(resolved.ws_idx, resolved.pane_id, params.seen)
+        else {
+            return agent_not_found(id, &params.target);
+        };
+        self.emit_pane_agent_status_if_changed(resolved.ws_idx, resolved.pane_id, previous_status);
+        let Some(agent) = self.agent_info(resolved.ws_idx, resolved.pane_id) else {
+            return agent_not_found(id, &params.target);
+        };
+        encode_success(id, ResponseResult::AgentSeenSet { agent, changed })
     }
 
     pub(super) fn handle_agent_rename(&mut self, id: String, params: AgentRenameParams) -> String {
@@ -722,5 +745,65 @@ mod tests {
                 Some("shell-pane")
             );
         }
+    }
+
+    #[test]
+    fn agent_seen_set_flips_background_idle_agent_between_done_and_idle() {
+        let mut app = app_with_agent();
+        app.state.workspaces.push(Workspace::test_new("other"));
+        app.state.ensure_test_terminals();
+        app.state.outer_terminal_focus = Some(true);
+        let pane_id = app.state.workspaces[1].tabs[0].root_pane;
+        let terminal_id = app.state.workspaces[1].tabs[0].panes[&pane_id]
+            .attached_terminal_id
+            .clone();
+        app.state
+            .terminals
+            .get_mut(&terminal_id)
+            .unwrap()
+            .set_detected_state(Some(Agent::Pi), AgentState::Idle);
+        let target = app.public_pane_id(1, pane_id).unwrap();
+
+        let response = app.handle_agent_seen_set(
+            "req".into(),
+            AgentSeenSetParams {
+                target: target.clone(),
+                seen: false,
+            },
+        );
+        let success: SuccessResponse = serde_json::from_str(&response).unwrap();
+        let ResponseResult::AgentSeenSet { agent, changed } = success.result else {
+            panic!("expected agent seen set response");
+        };
+        assert!(changed);
+        assert!(!agent.seen);
+        assert_eq!(agent.agent_status, AgentStatus::Done);
+
+        let response =
+            app.handle_agent_seen_set("req2".into(), AgentSeenSetParams { target, seen: true });
+        let success: SuccessResponse = serde_json::from_str(&response).unwrap();
+        let ResponseResult::AgentSeenSet { agent, changed } = success.result else {
+            panic!("expected agent seen set response");
+        };
+        assert!(changed);
+        assert!(agent.seen);
+        assert_eq!(agent.agent_status, AgentStatus::Idle);
+        assert_eq!(app.state.active, Some(0));
+    }
+
+    #[test]
+    fn agent_seen_set_reports_unknown_target() {
+        let mut app = app_with_agent();
+
+        let response = app.handle_agent_seen_set(
+            "req".into(),
+            AgentSeenSetParams {
+                target: "missing-agent".into(),
+                seen: false,
+            },
+        );
+
+        let error: crate::api::schema::ErrorResponse = serde_json::from_str(&response).unwrap();
+        assert_eq!(error.error.code, "agent_not_found");
     }
 }

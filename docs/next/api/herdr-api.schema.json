@@ -823,6 +823,11 @@
                 }
               ]
             },
+            "seen": {
+              "default": true,
+              "description": "False while an idle pane still shows as `done`. Missing on older servers.",
+              "type": "boolean"
+            },
             "state_labels": {
               "additionalProperties": {
                 "type": "string"
@@ -1311,6 +1316,22 @@
           },
           "required": [
             "target"
+          ],
+          "type": "object"
+        },
+        "AgentSeenSetParams": {
+          "description": "Agent-target form of `PaneSeenSetParams`.",
+          "properties": {
+            "seen": {
+              "type": "boolean"
+            },
+            "target": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "target",
+            "seen"
           ],
           "type": "object"
         },
@@ -3256,6 +3277,22 @@
           "required": [
             "pane_id",
             "offset_from_bottom"
+          ],
+          "type": "object"
+        },
+        "PaneSeenSetParams": {
+          "description": "Set the pane `seen` flag. `seen: false` shows an idle pane as `done`\nagain; `seen: true` acknowledges it without focusing it.",
+          "properties": {
+            "pane_id": {
+              "type": "string"
+            },
+            "seen": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "pane_id",
+            "seen"
           ],
           "type": "object"
         },
@@ -5487,6 +5524,22 @@
         {
           "properties": {
             "method": {
+              "const": "agent.seen.set",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/AgentSeenSetParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
               "const": "agent.start",
               "type": "string"
             },
@@ -5876,6 +5929,22 @@
             },
             "params": {
               "$ref": "#/schemas/request/$defs/PaneTarget"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "pane.seen.set",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/PaneSeenSetParams"
             }
           },
           "required": [
@@ -6718,6 +6787,11 @@
               "type": "integer"
             },
             "screen_detection_skipped": {
+              "type": "boolean"
+            },
+            "seen": {
+              "default": true,
+              "description": "False while an idle agent still shows as `done`. Missing on older servers.",
               "type": "boolean"
             },
             "state_change_seq": {
@@ -8036,6 +8110,11 @@
                   "type": "null"
                 }
               ]
+            },
+            "seen": {
+              "default": true,
+              "description": "False while an idle pane still shows as `done`. Missing on older servers.",
+              "type": "boolean"
             },
             "state_labels": {
               "additionalProperties": {
@@ -9529,6 +9608,26 @@
                 "agent": {
                   "$ref": "#/schemas/success_response/$defs/AgentInfo"
                 },
+                "changed": {
+                  "type": "boolean"
+                },
+                "type": {
+                  "const": "agent_seen_set",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "agent",
+                "changed"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "agent": {
+                  "$ref": "#/schemas/success_response/$defs/AgentInfo"
+                },
                 "argv": {
                   "items": {
                     "type": "string"
@@ -9623,6 +9722,26 @@
               "required": [
                 "type",
                 "pane"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "changed": {
+                  "type": "boolean"
+                },
+                "pane": {
+                  "$ref": "#/schemas/success_response/$defs/PaneInfo"
+                },
+                "type": {
+                  "const": "pane_seen_set",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "pane",
+                "changed"
               ],
               "type": "object"
             },

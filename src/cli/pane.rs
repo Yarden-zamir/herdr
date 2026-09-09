@@ -3,10 +3,10 @@ use crate::api::schema::{
     PaneFocusDirectionParams, PaneInputSetParams, PaneLayoutParams, PaneListParams,
     PaneMoveDestination, PaneMoveParams, PaneNeighborParams, PaneProcessInfoParams, PaneReadParams,
     PaneReleaseAgentParams, PaneRenameParams, PaneReportAgentParams, PaneReportAgentSessionParams,
-    PaneReportMetadataParams, PaneResizeParams, PaneRightClickTarget, PaneSendInputParams,
-    PaneSendKeysParams, PaneSendTextParams, PaneSplitParams, PaneSwapParams, PaneTarget,
-    PaneWaitForOutputParams, PaneZoomMode, PaneZoomParams, ReadFormat, ReadSource, Request,
-    SplitDirection,
+    PaneReportMetadataParams, PaneResizeParams, PaneRightClickTarget, PaneSeenSetParams,
+    PaneSendInputParams, PaneSendKeysParams, PaneSendTextParams, PaneSplitParams, PaneSwapParams,
+    PaneTarget, PaneWaitForOutputParams, PaneZoomMode, PaneZoomParams, ReadFormat, ReadSource,
+    Request, SplitDirection,
 };
 
 pub(super) fn run_pane_command(args: &[String]) -> std::io::Result<i32> {
@@ -24,6 +24,8 @@ pub(super) fn run_pane_command(args: &[String]) -> std::io::Result<i32> {
         "neighbor" => pane_neighbor(&args[1..]),
         "edges" => pane_edges(&args[1..]),
         "focus" => pane_focus(&args[1..]),
+        "mark-seen" => pane_seen_set(&args[1..], true),
+        "mark-unseen" => pane_seen_set(&args[1..], false),
         "resize" => pane_resize(&args[1..]),
         "zoom" => pane_zoom(&args[1..]),
         "read" => pane_read(&args[1..]),
@@ -93,6 +95,22 @@ fn pane_get(args: &[String]) -> std::io::Result<i32> {
         id: "cli:pane:get".into(),
         method: Method::PaneGet(PaneTarget {
             pane_id: super::normalize_pane_id(raw_pane_id),
+        }),
+    })?)
+}
+
+fn pane_seen_set(args: &[String], seen: bool) -> std::io::Result<i32> {
+    let verb = if seen { "mark-seen" } else { "mark-unseen" };
+    let [raw_pane_id] = args else {
+        eprintln!("usage: herdr pane {verb} <pane_id>");
+        return Ok(2);
+    };
+
+    super::print_response(&super::send_request(&Request {
+        id: format!("cli:pane:{verb}"),
+        method: Method::PaneSeenSet(PaneSeenSetParams {
+            pane_id: super::normalize_pane_id(raw_pane_id),
+            seen,
         }),
     })?)
 }
@@ -1681,6 +1699,8 @@ fn print_pane_help() {
     );
     eprintln!("  herdr pane zoom [<pane_id>|--pane ID|--current] [--toggle|--on|--off]");
     eprintln!("  herdr pane rename <pane_id> <label>|--clear");
+    eprintln!("  herdr pane mark-seen <pane_id>");
+    eprintln!("  herdr pane mark-unseen <pane_id>");
     eprintln!("  herdr pane read <pane_id> [--source visible|recent|recent-unwrapped] [--lines N] [--format text|ansi] [--ansi]");
     eprintln!("  herdr pane input [<pane_id>|--pane ID|--current] --right-click herdr|pane");
     eprintln!(

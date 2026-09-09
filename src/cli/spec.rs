@@ -375,6 +375,16 @@ fn agent_command() -> Command {
                 ),
         )
         .subcommand(id_command("focus", "target", "Focus an agent"))
+        .subcommand(id_command(
+            "mark-seen",
+            "target",
+            "Acknowledge a done agent without focusing it",
+        ))
+        .subcommand(id_command(
+            "mark-unseen",
+            "target",
+            "Show an idle agent as done again until its tab is focused",
+        ))
         .subcommand(
             Command::new("wait")
                 .about("Wait until an agent reaches one of the requested states")
@@ -468,6 +478,16 @@ fn pane_command() -> Command {
                 .args(current_pane_args()),
         )
         .subcommand(id_command("get", "pane_id", "Show a pane"))
+        .subcommand(id_command(
+            "mark-seen",
+            "pane_id",
+            "Acknowledge a done pane without focusing it",
+        ))
+        .subcommand(id_command(
+            "mark-unseen",
+            "pane_id",
+            "Show an idle pane as done again until its tab is focused",
+        ))
         .subcommand(
             Command::new("layout")
                 .about("Show pane layout information")
