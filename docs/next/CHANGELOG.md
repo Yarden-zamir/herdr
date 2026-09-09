@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Added
+- Ctrl-click on a visible file path now reaches plugin link handlers as a `file://` URL when the path exists relative to the pane working directory; a trailing `:line` becomes a `#L<line>` fragment. Herdr itself still never opens `file://` URLs.
+
 ## [0.9.3] - 2026-09-29
 
 This is a hotfix release for v0.9.2. See the v0.9.2 notes for the full feature release: https://github.com/herdrdev/herdr/releases/tag/v0.9.2

@@ -331,11 +331,22 @@ impl App {
         id: String,
         params: PaneLinkActivateParams,
     ) -> String {
+        let cwd = self
+            .parse_pane_id(&params.pane_id)
+            .and_then(|(ws_idx, pane_id)| {
+                let ws = self.state.workspaces.get(ws_idx)?;
+                let tab_idx = ws.find_tab_index_for_pane(pane_id)?;
+                ws.tabs[tab_idx].cwd_for_pane(
+                    pane_id,
+                    &self.state.terminals,
+                    &self.terminal_runtimes,
+                )
+            });
         let (pane_id, url) =
             match self.read_checked_pane_link(&id, &params, "activation", |runtime, col, row| {
-                runtime
-                    .link_target_at(col, row)
-                    .and_then(crate::app::actions::url_from_link_target)
+                runtime.link_target_at(col, row).and_then(|target| {
+                    crate::app::actions::url_from_link_target(target, cwd.as_deref())
+                })
             }) {
                 Ok(value) => value,
                 Err(error) => return error,

@@ -354,6 +354,12 @@ name an action declared by the same plugin. Link handler actions receive
 `HERDR_PLUGIN_CLICKED_URL` and `HERDR_PLUGIN_LINK_HANDLER_ID`. Handlers are
 checked in manifest order inside each plugin.
 
+A Ctrl-click on a visible file path also reaches handlers, as a `file://` URL,
+when the path exists relative to the pane working directory. Absolute, `~/`,
+`./`, and plain relative paths qualify; a trailing `:line[:col]` becomes a
+`#L<line>` fragment. Herdr never opens `file://` URLs itself: without a
+matching handler the click stays a plain click.
+
 ## Storage
 
 There is no Herdr-managed plugin storage API in v1. Plugins that need durable
