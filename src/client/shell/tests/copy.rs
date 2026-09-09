@@ -1238,3 +1238,120 @@ fn word_selection_result_survives_focus_snapshot_lag() {
         .as_ref()
         .is_some_and(crate::selection::Selection::is_visible));
 }
+
+#[test]
+fn search_scrollback_binding_enters_copy_mode_with_the_prompt_open() {
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(snapshot()));
+    let mut pane_surface = surface();
+    pane_surface.panes[0].scroll = Some(crate::protocol::PaneSurfaceScrollMetrics {
+        offset_from_bottom: 0,
+        max_offset_from_bottom: 20,
+        viewport_rows: 2,
+    });
+    state.set_pane_surface(pane_surface);
+    state.compose(106, 20).expect("composed frame");
+
+    let mut enter = ClientShellInput::default();
+    state.record_binding(
+        crate::input::KeybindMatch::Action(crate::input::KeybindAction::SearchScrollbackBackward),
+        &mut enter,
+    );
+    assert!(enter.repaint);
+    assert_eq!(state.mode, ClientShellMode::Copy);
+    let prompt = state
+        .copy_mode
+        .as_ref()
+        .and_then(|mode| mode.search_prompt.as_ref())
+        .expect("search prompt opens with copy mode");
+    assert_eq!(
+        prompt.direction,
+        crate::api::schema::PaneCopySearchDirection::Backward
+    );
+    assert!(prompt.query.is_empty());
+    let origin = state.copy_mode.as_ref().expect("copy mode").cursor;
+
+    state.handle_raw_events(vec![RawInputEvent::Text(crate::input::TextCommit::new(
+        "needle",
+    ))]);
+    let search = state.handle_raw_events(vec![RawInputEvent::Key(crate::input::TerminalKey::new(
+        KeyCode::Enter,
+        KeyModifiers::empty(),
+    ))]);
+    let [ClientShellAction::Endpoint { request, .. }] = &search.actions[..] else {
+        panic!("submitting the prompt should search through the endpoint");
+    };
+    assert!(matches!(
+        &request.method,
+        crate::api::schema::Method::PaneCopySearch(params)
+            if params.pane_id == "pane_1"
+                && params.query == "needle"
+                && params.direction == crate::api::schema::PaneCopySearchDirection::Backward
+                && params.cursor == origin
+    ));
+}
+
+#[test]
+fn search_scrollback_chord_reopens_the_prompt_inside_copy_mode() {
+    let config: Config = toml::from_str("[keys]\nsearch_scrollback_forward = \"ctrl+alt+f\"")
+        .expect("config with a search chord");
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&config));
+    state.set_snapshot(Box::new(snapshot()));
+    let mut pane_surface = surface();
+    pane_surface.panes[0].scroll = Some(crate::protocol::PaneSurfaceScrollMetrics {
+        offset_from_bottom: 0,
+        max_offset_from_bottom: 20,
+        viewport_rows: 2,
+    });
+    state.set_pane_surface(pane_surface);
+    state.compose(106, 20).expect("composed frame");
+    let chord = || {
+        RawInputEvent::Key(crate::input::TerminalKey::new(
+            KeyCode::Char('f'),
+            KeyModifiers::CONTROL | KeyModifiers::ALT,
+        ))
+    };
+
+    // From terminal mode the chord enters copy mode with the prompt open.
+    state.handle_raw_events(vec![chord()]);
+    assert_eq!(state.mode, ClientShellMode::Copy);
+    assert!(state.copy_mode.as_ref().is_some_and(|mode| {
+        mode.search_prompt.as_ref().is_some_and(|prompt| {
+            prompt.direction == crate::api::schema::PaneCopySearchDirection::Forward
+        })
+    }));
+
+    // While the prompt is open the chord is plain prompt input: it neither
+    // resets the query nor leaves the prompt.
+    state.handle_raw_events(vec![RawInputEvent::Text(crate::input::TextCommit::new(
+        "ab",
+    ))]);
+    state.handle_raw_events(vec![chord()]);
+    assert_eq!(
+        state
+            .copy_mode
+            .as_ref()
+            .and_then(|mode| mode.search_prompt.as_ref())
+            .map(|prompt| prompt.query.as_str()),
+        Some("ab")
+    );
+
+    // After the prompt closes, the chord reopens it without leaving copy mode.
+    state.handle_raw_events(vec![RawInputEvent::Key(crate::input::TerminalKey::new(
+        KeyCode::Esc,
+        KeyModifiers::empty(),
+    ))]);
+    assert!(state
+        .copy_mode
+        .as_ref()
+        .is_some_and(|mode| mode.search_prompt.is_none()));
+    let reopened = state.handle_raw_events(vec![chord()]);
+    assert!(reopened.repaint);
+    assert_eq!(state.mode, ClientShellMode::Copy);
+    assert!(state.copy_mode.as_ref().is_some_and(|mode| {
+        mode.search_prompt.as_ref().is_some_and(|prompt| {
+            prompt.query.is_empty()
+                && prompt.direction == crate::api::schema::PaneCopySearchDirection::Forward
+        })
+    }));
+}

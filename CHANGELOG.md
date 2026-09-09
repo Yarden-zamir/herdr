@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Added
+- Added optional `keys.search_scrollback_backward` and `keys.search_scrollback_forward` to enter copy mode with the search prompt already open, so one chord searches the focused pane scrollback. Pressing the same chord inside copy mode reopens the prompt.
+
 ## [0.9.0] - 2026-09-07
 
 ### Added
