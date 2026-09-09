@@ -953,6 +953,7 @@ impl App {
                     context: "using config.toml".to_string(),
                     position: None,
                     target: None,
+                    plugin_action: None,
                 });
             }
         } else {
@@ -965,6 +966,7 @@ impl App {
                     context: "with warnings".to_string(),
                     position: None,
                     target: None,
+                    plugin_action: None,
                 });
             }
         }
@@ -1139,6 +1141,7 @@ mod tests {
                         body: Some("api workspace".into()),
                         position: Some(crate::config::ToastHerdrPosition::TopLeft),
                         sound: crate::api::schema::NotificationShowSound::None,
+                        action: None,
                     },
                 ),
             });
@@ -1175,6 +1178,7 @@ mod tests {
                         body: None,
                         position: None,
                         sound: crate::api::schema::NotificationShowSound::None,
+                        action: None,
                     },
                 ),
             });
@@ -1200,6 +1204,7 @@ mod tests {
             context: "background · 2".to_string(),
             position: None,
             target: None,
+            plugin_action: None,
         });
 
         let response =
@@ -1211,6 +1216,7 @@ mod tests {
                         body: None,
                         position: None,
                         sound: crate::api::schema::NotificationShowSound::None,
+                        action: None,
                     },
                 ),
             });
@@ -1244,6 +1250,7 @@ mod tests {
                         body: None,
                         position: None,
                         sound: crate::api::schema::NotificationShowSound::None,
+                        action: None,
                     },
                 ),
             });

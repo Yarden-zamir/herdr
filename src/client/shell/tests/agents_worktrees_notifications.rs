@@ -1,6 +1,49 @@
 use super::*;
 
 #[test]
+fn toast_click_invokes_plugin_action() {
+    let config = ClientShellConfig::from_config(&Config::default());
+    let mut state = ClientShellState::new(config);
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+    state.visible_notification = Some(ClientVisibleNotification {
+        endpoint_id: ClientEndpointId::Local,
+        event: SemanticNotification {
+            kind: SemanticNotificationKind::Custom,
+            title: "build finished".into(),
+            body: None,
+            sound: None,
+            agent: None,
+            workspace_id: None,
+            tab_id: None,
+            pane_id: None,
+            position: None,
+            plugin_action: Some("acme.ci.open".into()),
+        },
+        deadline: std::time::Instant::now() + std::time::Duration::from_secs(60),
+    });
+    state.compose(106, 20).expect("composed frame");
+    let toast = state.hits.notification_toast;
+    assert!(!toast.is_empty(), "toast should have a hit rect");
+
+    let click = state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: toast.x + 1,
+        row: toast.y + 1,
+        modifiers: KeyModifiers::empty(),
+    })]);
+    let [ClientShellAction::Endpoint { request, .. }] = &click.actions[..] else {
+        panic!("toast click should invoke the plugin action through the endpoint API");
+    };
+    assert!(matches!(
+        &request.method,
+        crate::api::schema::Method::PluginActionInvoke(params)
+            if params.action_id == "acme.ci.open" && params.plugin_id.is_none()
+    ));
+    assert!(state.visible_notification.is_none());
+}
+
+#[test]
 fn mouse_hits_use_stable_workspace_tab_and_pane_ids() {
     let config = ClientShellConfig::from_config(&Config::default());
     let mut state = ClientShellState::new(config);
@@ -1177,6 +1220,7 @@ fn semantic_notifications_use_client_policy_and_stable_navigation_targets() {
             tab_id: Some("tab_2".into()),
             pane_id: Some("pane_2".into()),
             position: None,
+            plugin_action: None,
         },
         now,
     );
@@ -1239,6 +1283,7 @@ fn semantic_notifications_use_client_policy_and_stable_navigation_targets() {
             tab_id: Some("tab_2".into()),
             pane_id: Some("pane_2".into()),
             position: None,
+            plugin_action: None,
         },
         now,
     );
@@ -1270,6 +1315,7 @@ fn semantic_notifications_use_client_policy_and_stable_navigation_targets() {
             tab_id: Some("tab_2".into()),
             pane_id: Some("pane_2".into()),
             position: None,
+            plugin_action: None,
         },
         now,
     );
@@ -1287,6 +1333,7 @@ fn semantic_notifications_use_client_policy_and_stable_navigation_targets() {
             tab_id: Some("tab_2".into()),
             pane_id: Some("pane_2".into()),
             position: None,
+            plugin_action: None,
         },
         now,
     );

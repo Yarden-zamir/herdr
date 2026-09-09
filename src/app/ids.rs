@@ -1,5 +1,12 @@
 use super::App;
 
+pub(crate) struct ResolvedPane {
+    pub pane_id: crate::layout::PaneId,
+    pub workspace_id: String,
+    pub tab_id: String,
+    pub public_pane_id: String,
+}
+
 impl App {
     pub(crate) fn find_pane(
         &self,
@@ -101,6 +108,19 @@ impl App {
             return Some(pane_id);
         }
         None
+    }
+
+    /// Resolves a public pane id to its internal id and public workspace,
+    /// tab, and pane ids.
+    pub(crate) fn resolve_public_pane(&self, id: &str) -> Option<ResolvedPane> {
+        let (ws_idx, pane_id) = self.parse_pane_id(id)?;
+        let tab_idx = self.state.workspaces[ws_idx].find_tab_index_for_pane(pane_id)?;
+        Some(ResolvedPane {
+            pane_id,
+            workspace_id: self.public_workspace_id(ws_idx),
+            tab_id: self.public_tab_id(ws_idx, tab_idx)?,
+            public_pane_id: self.public_pane_id(ws_idx, pane_id)?,
+        })
     }
 
     pub(crate) fn parse_pane_id(&self, id: &str) -> Option<(usize, crate::layout::PaneId)> {

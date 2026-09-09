@@ -33,6 +33,7 @@ const CLIENT_SHELL_METHODS: &[&str] = &[
     "pane.split",
     "pane.swap",
     "pane.zoom",
+    "plugin.action.invoke",
     "product_announcement.dismiss",
     "release_notes.dismiss",
     "server.reload_config",
@@ -182,6 +183,11 @@ pub(crate) fn spawn_response_waiter(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn client_shells_may_invoke_plugin_actions_from_toasts() {
+        assert!(supports_client_shell_method_name("plugin.action.invoke"));
+    }
     use std::collections::{BTreeMap, BTreeSet};
 
     use sha2::{Digest, Sha256};

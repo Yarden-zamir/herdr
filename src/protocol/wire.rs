@@ -1319,6 +1319,8 @@ pub struct SemanticNotification {
     pub tab_id: Option<String>,
     pub pane_id: Option<String>,
     pub position: Option<crate::config::ToastHerdrPosition>,
+    /// Plugin action to invoke when the toast is clicked.
+    pub plugin_action: Option<String>,
 }
 
 /// Messages sent from the server to the client over the client protocol socket.
@@ -2715,6 +2717,7 @@ mod tests {
             tab_id: Some("w1:t1".into()),
             pane_id: Some("w1:p1".into()),
             position: Some(crate::config::ToastHerdrPosition::TopRight),
+            plugin_action: None,
         });
         let encoded = bincode::serde::encode_to_vec(&msg, bincode::config::standard()).unwrap();
         let (decoded, _): (ServerMessage, _) =
