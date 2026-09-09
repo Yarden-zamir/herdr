@@ -160,6 +160,10 @@ impl ClientShellState {
                     }
                     return;
                 }
+                if let Some(direction) = crate::input::copy_search_direction(action) {
+                    self.enter_copy_search(direction, outcome);
+                    return;
+                }
                 if self.handle_endpoint_navigation(action, outcome) {
                     return;
                 }

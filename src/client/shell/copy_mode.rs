@@ -98,12 +98,48 @@ impl ClientShellState {
         true
     }
 
+    /// Enter copy mode for the focused pane and open the search prompt in
+    /// `direction`. Inside copy mode on the same pane this only reopens
+    /// the prompt.
+    pub(super) fn enter_copy_search(
+        &mut self,
+        direction: crate::api::schema::PaneCopySearchDirection,
+        outcome: &mut ClientShellInput,
+    ) {
+        if !self.enter_copy_mode(outcome) {
+            return;
+        }
+        self.open_copy_search(direction);
+        outcome.repaint = true;
+    }
+
+    /// Copy mode owns direct input; the only direct bindings honored here
+    /// are the two search actions, so the search chord reopens the prompt
+    /// the way cmd+f refocuses a terminal search box. Revisit if copy mode
+    /// ever honors direct bindings in general.
+    fn direct_search_binding(
+        &self,
+        key: &crate::input::TerminalKey,
+    ) -> Option<crate::api::schema::PaneCopySearchDirection> {
+        match crate::input::resolve_direct_binding(&self.config.keybinds.keybinds, key)? {
+            crate::input::KeybindMatch::Action(action) => {
+                crate::input::copy_search_direction(action)
+            }
+            _ => None,
+        }
+    }
+
     pub(super) fn route_copy_mode_key(
         &mut self,
         key: &crate::input::TerminalKey,
         outcome: &mut ClientShellInput,
     ) {
         if self.route_copy_search_prompt_key(key, outcome) {
+            return;
+        }
+        if let Some(direction) = self.direct_search_binding(key) {
+            self.open_copy_search(direction);
+            outcome.repaint = true;
             return;
         }
         match key.code {

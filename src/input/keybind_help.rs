@@ -161,6 +161,14 @@ pub(crate) fn keybind_help_groups(
                 entry(binding_label(&keybinds.rename_pane), "rename pane"),
                 entry(binding_label(&keybinds.edit_scrollback), "edit scrollback"),
                 entry(binding_label(&keybinds.copy_mode), "copy mode"),
+                entry(
+                    binding_label(&keybinds.search_scrollback_backward),
+                    "search scrollback backward",
+                ),
+                entry(
+                    binding_label(&keybinds.search_scrollback_forward),
+                    "search scrollback forward",
+                ),
                 entry(binding_label(&keybinds.zoom), "zoom pane"),
                 entry(binding_label(&keybinds.resize_mode), "resize mode"),
                 entry(

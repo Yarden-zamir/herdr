@@ -704,6 +704,18 @@
           "description": "Enter keyboard copy mode for the focused pane."
         },
         {
+          "key": "keys.search_scrollback_backward",
+          "type": "keybinding",
+          "default": "unset",
+          "description": "Enter copy mode for the focused pane with the backward search prompt open. Unset by default."
+        },
+        {
+          "key": "keys.search_scrollback_forward",
+          "type": "keybinding",
+          "default": "unset",
+          "description": "Enter copy mode for the focused pane with the forward search prompt open. Unset by default."
+        },
+        {
           "key": "keys.focus_pane_left",
           "type": "keybinding",
           "default": "\"prefix+h\"",
