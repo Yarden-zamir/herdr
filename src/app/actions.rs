@@ -1101,6 +1101,7 @@ impl AppState {
         pane_id: crate::layout::PaneId,
         viewport_row: u16,
         col: u16,
+        cwd: Option<&std::path::Path>,
     ) -> Option<String> {
         let rt = self.runtime_for_pane_in_workspace(terminal_runtimes, ws_idx, pane_id)?;
         let (height, width) = rt.current_size();
@@ -1111,10 +1112,13 @@ impl AppState {
             viewport_row,
             col,
             rt.scroll_metrics(),
+            cwd,
         )
     }
 }
 
+/// The link under a pane cell: an OSC 8 hyperlink, a visible web URL, or a
+/// visible file path that exists relative to `cwd` (as a `file://` URL).
 fn url_at_runtime_cell(
     runtime: &crate::terminal::TerminalRuntime,
     pane_id: crate::layout::PaneId,
@@ -1122,6 +1126,7 @@ fn url_at_runtime_cell(
     viewport_row: u16,
     col: u16,
     metrics: Option<crate::pane::ScrollMetrics>,
+    cwd: Option<&std::path::Path>,
 ) -> Option<String> {
     if viewport_row >= area.height || col >= area.width {
         return None;
@@ -1151,7 +1156,9 @@ fn url_at_runtime_cell(
         .find('\n')
         .map_or(visible_text.len(), |idx| logical_cell.byte_index + idx);
     let line = visible_text.get(line_start..line_end)?;
-    url_at_column(line, logical_cell.logical_col).map(str::to_owned)
+    url_at_column(line, logical_cell.logical_col)
+        .map(str::to_owned)
+        .or_else(|| path_url_at_column(line, logical_cell.logical_col, cwd))
 }
 
 pub(crate) fn safe_web_url(url: &str) -> Option<&str> {
@@ -1210,6 +1217,91 @@ pub(crate) fn url_at_column(row: &str, col: u16) -> Option<&str> {
     let start_byte = byte_index_for_cell(row, span.start);
     let end_byte = byte_index_after_cell(row, span.end);
     safe_web_url(row.get(start_byte..end_byte)?)
+}
+
+/// A visible file path under `col` as a `file://` URL, when the path exists.
+/// Relative paths and `~` resolve against `cwd` and the home directory. A
+/// trailing `:line[:col]` becomes a `#L<line>` fragment. Only plugin link
+/// handlers act on the result: Herdr never opens `file://` URLs itself.
+pub(crate) fn path_url_at_column(
+    row: &str,
+    col: u16,
+    cwd: Option<&std::path::Path>,
+) -> Option<String> {
+    let (start_col, end_col) = word_bounds_at_column(row, col)?;
+    let token: String = text_cells(row)
+        .into_iter()
+        .filter(|cell| cell.start_col >= start_col && cell.end_col <= end_col)
+        .map(|cell| cell.ch)
+        .collect();
+    let (text, line) = split_line_suffix(&token);
+    let text = text.trim_end_matches(['.', ',', ';', ':']);
+    if text.is_empty() || text.starts_with('-') || !looks_like_path(text) {
+        return None;
+    }
+    let path = expand_home(text)?;
+    let path = if path.is_absolute() {
+        path
+    } else {
+        cwd?.join(path)
+    };
+    // canonicalize also proves the path exists.
+    let path = std::fs::canonicalize(path).ok()?;
+    Some(file_url(&path, line))
+}
+
+/// Plain words are never paths: a separator, a home or dot prefix, or an
+/// extension dot is required before the filesystem is consulted.
+fn looks_like_path(text: &str) -> bool {
+    text.contains('/')
+        || text.starts_with('~')
+        || text.starts_with('.')
+        || std::path::Path::new(text).extension().is_some()
+}
+
+/// Split `path:line[:col]`; only trailing numeric segments count.
+fn split_line_suffix(token: &str) -> (&str, Option<u32>) {
+    let mut rest = token;
+    let mut numbers = Vec::new();
+    while numbers.len() < 2 {
+        let Some((head, tail)) = rest.rsplit_once(':') else {
+            break;
+        };
+        let Ok(number) = tail.parse::<u32>() else {
+            break;
+        };
+        numbers.insert(0, number);
+        rest = head;
+    }
+    (rest, numbers.first().copied())
+}
+
+fn expand_home(text: &str) -> Option<std::path::PathBuf> {
+    match text.strip_prefix('~') {
+        None => Some(std::path::PathBuf::from(text)),
+        Some(rest) if rest.is_empty() || rest.starts_with('/') => {
+            Some(std::env::home_dir()?.join(rest.trim_start_matches('/')))
+        }
+        // `~user` forms are not expanded.
+        Some(_) => None,
+    }
+}
+
+/// `file://` URL for an absolute path, percent-encoded per RFC 3986 with
+/// `/` kept, plus a `#L<line>` fragment.
+fn file_url(path: &std::path::Path, line: Option<u32>) -> String {
+    let mut url = String::from("file://");
+    for byte in path.to_string_lossy().bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~' | b'/') {
+            url.push(byte as char);
+        } else {
+            url.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    if let Some(line) = line {
+        url.push_str(&format!("#L{line}"));
+    }
+    url
 }
 
 fn url_spans(cells: &[TextCell]) -> Vec<CellSpan> {
@@ -2301,6 +2393,83 @@ mod tests {
 
     fn selected_url<'a>(row: &'a str, click: &str) -> Option<&'a str> {
         url_at_column(row, col_of(row, click))
+    }
+
+    /// A unique temp tree: `src/main.rs`, `Cargo.toml`, `docs dir/a.md`.
+    fn path_fixture() -> std::path::PathBuf {
+        static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!("herdr-path-links-{}-{n}", std::process::id()));
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::create_dir_all(root.join("docs dir")).unwrap();
+        std::fs::write(root.join("src/main.rs"), "").unwrap();
+        std::fs::write(root.join("Cargo.toml"), "").unwrap();
+        std::fs::write(root.join("docs dir/a.md"), "").unwrap();
+        std::fs::canonicalize(root).unwrap()
+    }
+
+    fn path_url(row: &str, click: &str, cwd: Option<&std::path::Path>) -> Option<String> {
+        path_url_at_column(row, col_of(row, click), cwd)
+    }
+
+    #[test]
+    fn visible_paths_become_file_urls_when_they_exist() {
+        let root = path_fixture();
+        let dir = root.display();
+        let cases = [
+            ("see src/main.rs:12:3 now", "main", format!("file://{dir}/src/main.rs#L12")),
+            ("edit ./src/main.rs,", "main", format!("file://{dir}/src/main.rs")),
+            ("⏺ Update(Cargo.toml)", "Cargo", format!("file://{dir}/Cargo.toml")),
+            (&format!("⏺ Read({dir}/src/main.rs)"), "main.rs", format!("file://{dir}/src/main.rs")),
+            ("cd src/", "src", format!("file://{dir}/src")),
+            ("cat 'docs dir/a.md'", "a.md", format!("file://{dir}/docs%20dir/a.md")),
+        ];
+        for (row, click, expected) in cases {
+            assert_eq!(
+                path_url(row, click, Some(&root)).as_deref(),
+                Some(expected.as_str()),
+                "row={row:?}"
+            );
+        }
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn visible_paths_need_a_path_shape_and_an_existing_target() {
+        let root = path_fixture();
+        let cases = [
+            ("open missing/file.rs:1", "missing"),
+            ("version 0.9.0 released", "0.9"),
+            ("run cargo test", "cargo"),
+            ("flag --src/main.rs", "main"),
+            ("word src.", "src"),
+        ];
+        for (row, click) in cases {
+            assert_eq!(path_url(row, click, Some(&root)), None, "row={row:?}");
+        }
+        // Relative paths need a cwd; absolute ones do not.
+        assert_eq!(path_url("see src/main.rs", "main", None), None);
+        let absolute = format!("see {}/Cargo.toml", root.display());
+        assert!(path_url(&absolute, "Cargo", None).is_some());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn tilde_paths_resolve_against_home() {
+        let home = std::fs::canonicalize(std::env::home_dir().unwrap()).unwrap();
+        assert_eq!(
+            path_url("cd ~/ now", "~", None).as_deref(),
+            Some(file_url(&home, None).as_str())
+        );
+        assert_eq!(path_url("mail ~bob/x", "bob", None), None);
+    }
+
+    #[test]
+    fn line_suffix_split_keeps_only_trailing_numbers() {
+        assert_eq!(split_line_suffix("a.rs:12:3"), ("a.rs", Some(12)));
+        assert_eq!(split_line_suffix("a.rs:12"), ("a.rs", Some(12)));
+        assert_eq!(split_line_suffix("a.rs"), ("a.rs", None));
+        assert_eq!(split_line_suffix("host:8080/x"), ("host:8080/x", None));
     }
 
     fn text_in_cell_range(row: &str, start_col: u16, end_col: u16) -> String {

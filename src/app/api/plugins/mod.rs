@@ -297,12 +297,17 @@ impl App {
                 "pane content changed before link activation",
             );
         }
+        let cwd = self.state.workspaces.get(ws_idx).and_then(|ws| {
+            let tab_idx = ws.find_tab_index_for_pane(pane_id)?;
+            ws.tabs[tab_idx].cwd_for_pane(pane_id, &self.state.terminals, &self.terminal_runtimes)
+        });
         let url = self.state.url_at_pane_surface_cell(
             &self.terminal_runtimes,
             ws_idx,
             pane_id,
             params.viewport_row,
             params.col,
+            cwd.as_deref(),
         );
         if runtime.content_seq() != content_revision
             || runtime
