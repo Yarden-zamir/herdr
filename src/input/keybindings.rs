@@ -54,6 +54,8 @@ pub(crate) enum KeybindAction {
     EditScrollback,
     ClearPane,
     CopyMode,
+    SearchScrollbackBackward,
+    SearchScrollbackForward,
     Zoom,
     EnterResizeMode,
     ResizePaneLeft,
@@ -70,6 +72,21 @@ pub(crate) enum KeybindAction {
     OpenNotificationTarget,
     Detach,
     OpenNavigator,
+}
+
+/// Search direction for the copy-search key actions, `None` for every other action.
+pub(crate) fn copy_search_direction(
+    action: KeybindAction,
+) -> Option<crate::api::schema::PaneCopySearchDirection> {
+    match action {
+        KeybindAction::SearchScrollbackBackward => {
+            Some(crate::api::schema::PaneCopySearchDirection::Backward)
+        }
+        KeybindAction::SearchScrollbackForward => {
+            Some(crate::api::schema::PaneCopySearchDirection::Forward)
+        }
+        _ => None,
+    }
 }
 
 pub(crate) fn resolve_direct_binding(
@@ -123,6 +140,14 @@ pub(crate) fn resolve_non_indexed_action(
         (&keybinds.edit_scrollback, KeybindAction::EditScrollback),
         (&keybinds.clear_pane, KeybindAction::ClearPane),
         (&keybinds.copy_mode, KeybindAction::CopyMode),
+        (
+            &keybinds.search_scrollback_backward,
+            KeybindAction::SearchScrollbackBackward,
+        ),
+        (
+            &keybinds.search_scrollback_forward,
+            KeybindAction::SearchScrollbackForward,
+        ),
         (&keybinds.focus_pane_left, KeybindAction::FocusPaneLeft),
         (&keybinds.focus_pane_down, KeybindAction::FocusPaneDown),
         (&keybinds.focus_pane_up, KeybindAction::FocusPaneUp),
