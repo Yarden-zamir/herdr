@@ -392,6 +392,54 @@ impl ClientShellState {
         true
     }
 
+    /// Queue `pane.link.activate` for a pane cell with the pane's current
+    /// content revision and scroll offset, so the server can refuse a click
+    /// whose text moved (`stale_content`).
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn push_pane_link_activate(
+        &mut self,
+        pane_id: String,
+        inner_rect: ratatui::layout::Rect,
+        viewport_row: u16,
+        col: u16,
+        fallback_events: Vec<crossterm::event::MouseEvent>,
+        retried: bool,
+        outcome: &mut ClientShellInput,
+    ) -> bool {
+        let content_revision = self
+            .pane_surface
+            .as_ref()
+            .and_then(|surface| surface.panes.iter().find(|pane| pane.pane_id == pane_id))
+            .map(|pane| pane.content_revision);
+        let offset_from_bottom = self
+            .hits
+            .panes
+            .iter()
+            .find(|hit| hit.pane_id == pane_id)
+            .and_then(|hit| hit.scroll)
+            .map(|metrics| metrics.offset_from_bottom as u64);
+        self.push_endpoint_method_with_kind(
+            crate::api::schema::Method::PaneLinkActivate(
+                crate::api::schema::PaneLinkActivateParams {
+                    pane_id: pane_id.clone(),
+                    viewport_row,
+                    col,
+                    content_revision,
+                    offset_from_bottom,
+                },
+            ),
+            PendingEndpointKind::PaneLinkActivate {
+                pane_id,
+                inner_rect,
+                viewport_row,
+                col,
+                fallback_events,
+                retried,
+            },
+            outcome,
+        )
+    }
+
     pub(super) fn push_endpoint_method_with_kind(
         &mut self,
         method: crate::api::schema::Method,
@@ -722,20 +770,43 @@ impl ClientShellState {
             PendingEndpointKind::PaneLinkActivate {
                 pane_id,
                 inner_rect,
+                viewport_row,
+                col,
                 fallback_events,
+                retried,
             } => {
                 let completed_before_release = !fallback_events.iter().any(|event| {
                     event.kind
                         == crossterm::event::MouseEventKind::Up(crossterm::event::MouseButton::Left)
                 });
-                let replay = (self.mode == ClientShellMode::Terminal
+                let pane_visible = self.mode == ClientShellMode::Terminal
                     && self.overlay.is_none()
                     && self
                         .hits
                         .panes
                         .iter()
-                        .any(|hit| hit.pane_id == pane_id && hit.inner_rect == inner_rect))
-                .then_some(fallback_events);
+                        .any(|hit| hit.pane_id == pane_id && hit.inner_rect == inner_rect);
+                // A busy pane repaints between the click and the server lookup.
+                // Retry once with the revision the client holds now; a second
+                // miss drops the click like any other stale result.
+                let stale = matches!(&result, Err(error) if error.code.as_deref() == Some("stale_content"));
+                if stale && !retried && pane_visible {
+                    let mut outcome = ClientShellInput::default();
+                    let queued = self.push_pane_link_activate(
+                        pane_id,
+                        inner_rect,
+                        viewport_row,
+                        col,
+                        fallback_events,
+                        true,
+                        &mut outcome,
+                    );
+                    if !queued {
+                        self.url_click_consumes_until_up = completed_before_release;
+                    }
+                    return (outcome.repaint, outcome.actions);
+                }
+                let replay = pane_visible.then_some(fallback_events);
                 if replay.is_none() {
                     self.url_click_consumes_until_up = completed_before_release;
                 }

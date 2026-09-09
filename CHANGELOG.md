@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Added
+- Ctrl-click link activation now retries once with the current pane content revision when the pane repainted between the click and the server lookup, so links in busy agent panes open instead of being dropped as stale.
+
 ## [0.9.0] - 2026-09-07
 
 ### Added

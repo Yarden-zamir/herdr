@@ -46,6 +46,68 @@ fn ctrl_click_routes_link_activation_through_endpoint_then_client_host() {
 }
 
 #[test]
+fn stale_link_activation_retries_once_with_the_current_revision() {
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+    state.compose(106, 20).expect("pane frame");
+    let pane = state.hits.panes[0].clone();
+    let down = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: pane.inner_rect.x + 2,
+        row: pane.inner_rect.y + 1,
+        modifiers: KeyModifiers::CONTROL,
+    };
+    let activate = state.handle_raw_events(vec![RawInputEvent::Mouse(down)]);
+    let first_id = match &activate.actions[..] {
+        [ClientShellAction::Endpoint { request, .. }] => request.id.clone(),
+        _ => panic!("expected link activation request"),
+    };
+    // The pane repaints before the server answers.
+    let mut repainted = surface();
+    repainted.panes[0].content_revision = 7;
+    state.set_pane_surface(repainted);
+    state.compose(106, 20).expect("pane frame");
+    let stale = || {
+        Err(ClientShellEndpointError {
+            code: Some("stale_content".into()),
+            message: "pane content changed before link activation".into(),
+        })
+    };
+
+    let (_, actions) = state.handle_endpoint_result("boot-1", &first_id, stale());
+    let retry_id = match &actions[..] {
+        [ClientShellAction::Endpoint { request, .. }] => {
+            assert!(matches!(
+                &request.method,
+                crate::api::schema::Method::PaneLinkActivate(params)
+                    if params.pane_id == "pane_1"
+                        && params.viewport_row == 1
+                        && params.col == 2
+                        && params.content_revision == Some(7)
+            ));
+            request.id.clone()
+        }
+        other => panic!("expected one retry request, got {other:?}"),
+    };
+    assert_ne!(retry_id, first_id);
+    assert!(!state.url_click_consumes_until_up);
+
+    // The release lands while the retry is pending and is absorbed by it.
+    let up = MouseEvent {
+        kind: MouseEventKind::Up(MouseButton::Left),
+        ..down
+    };
+    let held = state.handle_raw_events(vec![RawInputEvent::Mouse(up)]);
+    assert!(held.requests.is_empty() && held.actions.is_empty());
+
+    // A second stale result drops the click: no third request, no replay.
+    let (_, actions) = state.handle_endpoint_result("boot-1", &retry_id, stale());
+    assert!(actions.is_empty(), "no second retry: {actions:?}");
+    assert!(!state.url_click_consumes_until_up);
+}
+
+#[test]
 fn ctrl_click_without_a_link_replays_the_original_gesture() {
     let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
     state.set_snapshot(Box::new(snapshot()));
