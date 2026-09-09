@@ -702,7 +702,11 @@ pub(super) enum PendingEndpointKind {
     PaneLinkActivate {
         pane_id: String,
         inner_rect: Rect,
+        viewport_row: u16,
+        col: u16,
         fallback_events: Vec<crossterm::event::MouseEvent>,
+        /// One retry with a fresh content revision after `stale_content`.
+        retried: bool,
     },
     CopyMotion {
         pane_id: String,

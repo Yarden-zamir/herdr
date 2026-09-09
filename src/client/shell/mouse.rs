@@ -886,35 +886,14 @@ impl ClientShellState {
             {
                 let viewport_row = mouse.row.saturating_sub(hit.inner_rect.y);
                 let col = mouse.column.saturating_sub(hit.inner_rect.x);
-                let content_revision = self
-                    .pane_surface
-                    .as_ref()
-                    .and_then(|surface| {
-                        surface
-                            .panes
-                            .iter()
-                            .find(|pane| pane.pane_id == hit.pane_id)
-                    })
-                    .map(|pane| pane.content_revision);
                 self.last_pane_click = None;
-                let pane_id = hit.pane_id.clone();
-                self.push_endpoint_method_with_kind(
-                    crate::api::schema::Method::PaneLinkActivate(
-                        crate::api::schema::PaneLinkActivateParams {
-                            pane_id: pane_id.clone(),
-                            viewport_row,
-                            col,
-                            content_revision,
-                            offset_from_bottom: hit
-                                .scroll
-                                .map(|metrics| metrics.offset_from_bottom as u64),
-                        },
-                    ),
-                    PendingEndpointKind::PaneLinkActivate {
-                        pane_id,
-                        inner_rect: hit.inner_rect,
-                        fallback_events: vec![mouse],
-                    },
+                self.push_pane_link_activate(
+                    hit.pane_id.clone(),
+                    hit.inner_rect,
+                    viewport_row,
+                    col,
+                    vec![mouse],
+                    false,
                     outcome,
                 );
                 return;

@@ -417,6 +417,9 @@ fn cancelled_link_activation_does_not_replay_mouse_input() {
         PendingEndpointKind::PaneLinkActivate {
             pane_id,
             inner_rect,
+            viewport_row: 0,
+            col: 0,
+            retried: false,
             fallback_events: vec![MouseEvent {
                 kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
                 column: inner_rect.x,
