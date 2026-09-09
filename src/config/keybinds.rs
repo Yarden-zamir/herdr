@@ -382,6 +382,8 @@ pub struct Keybinds {
     pub edit_scrollback: ActionKeybinds,
     pub clear_pane: ActionKeybinds,
     pub copy_mode: ActionKeybinds,
+    pub search_scrollback_backward: ActionKeybinds,
+    pub search_scrollback_forward: ActionKeybinds,
     pub focus_pane_left: ActionKeybinds,
     pub focus_pane_down: ActionKeybinds,
     pub focus_pane_up: ActionKeybinds,
@@ -565,6 +567,8 @@ impl Config {
             edit_scrollback: empty_action!(),
             clear_pane: empty_action!(),
             copy_mode: empty_action!(),
+            search_scrollback_backward: empty_action!(),
+            search_scrollback_forward: empty_action!(),
             focus_pane_left: empty_action!(),
             focus_pane_down: empty_action!(),
             focus_pane_up: empty_action!(),
@@ -713,6 +717,16 @@ impl Config {
             apply_action!(keybinds.edit_scrollback, edit_scrollback, source);
             apply_action!(keybinds.clear_pane, clear_pane, source);
             apply_action!(keybinds.copy_mode, copy_mode, source);
+            apply_action!(
+                keybinds.search_scrollback_backward,
+                search_scrollback_backward,
+                source
+            );
+            apply_action!(
+                keybinds.search_scrollback_forward,
+                search_scrollback_forward,
+                source
+            );
             apply_action!(keybinds.focus_pane_left, focus_pane_left, source);
             apply_action!(keybinds.focus_pane_down, focus_pane_down, source);
             apply_action!(keybinds.focus_pane_up, focus_pane_up, source);
@@ -1683,6 +1697,13 @@ next_tab = "prefix+n"
         let kb = Config::default().keybinds();
         assert!(kb.open_worktree.bindings.is_empty());
         assert!(kb.remove_worktree.bindings.is_empty());
+    }
+
+    #[test]
+    fn search_scrollback_keybinds_are_unset_by_default() {
+        let kb = Config::default().keybinds();
+        assert!(kb.search_scrollback_backward.bindings.is_empty());
+        assert!(kb.search_scrollback_forward.bindings.is_empty());
     }
 
     #[test]
