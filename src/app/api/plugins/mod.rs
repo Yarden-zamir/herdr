@@ -313,13 +313,26 @@ impl App {
         Ok((pane_id, value))
     }
 
+    /// Base for relative paths in link lookups: the pane working directory.
+    fn pane_link_cwd(&self, params: &PaneLinkActivateParams) -> Option<std::path::PathBuf> {
+        let (ws_idx, pane_id) = self.parse_pane_id(&params.pane_id)?;
+        let ws = self.state.workspaces.get(ws_idx)?;
+        let tab_idx = ws.find_tab_index_for_pane(pane_id)?;
+        ws.tabs[tab_idx].cwd_for_pane(pane_id, &self.state.terminals, &self.terminal_runtimes)
+    }
+
     pub(super) fn handle_pane_link_resolve(
         &mut self,
         id: String,
         params: PaneLinkActivateParams,
     ) -> String {
+        let cwd = self.pane_link_cwd(&params);
         match self.read_checked_pane_link(&id, &params, "resolution", |runtime, col, row| {
-            runtime.link_regions_at(col, row, crate::app::actions::url_byte_range)
+            runtime.link_regions_at(col, row, |text, clicked_byte| {
+                crate::app::actions::url_byte_range(text, clicked_byte).or_else(|| {
+                    crate::app::actions::path_byte_range(text, clicked_byte, cwd.as_deref())
+                })
+            })
         }) {
             Ok((_, regions)) => encode_success(id, ResponseResult::PaneLinkResolved { regions }),
             Err(error) => error,
@@ -331,17 +344,7 @@ impl App {
         id: String,
         params: PaneLinkActivateParams,
     ) -> String {
-        let cwd = self
-            .parse_pane_id(&params.pane_id)
-            .and_then(|(ws_idx, pane_id)| {
-                let ws = self.state.workspaces.get(ws_idx)?;
-                let tab_idx = ws.find_tab_index_for_pane(pane_id)?;
-                ws.tabs[tab_idx].cwd_for_pane(
-                    pane_id,
-                    &self.state.terminals,
-                    &self.terminal_runtimes,
-                )
-            });
+        let cwd = self.pane_link_cwd(&params);
         let (pane_id, url) =
             match self.read_checked_pane_link(&id, &params, "activation", |runtime, col, row| {
                 runtime.link_target_at(col, row).and_then(|target| {
