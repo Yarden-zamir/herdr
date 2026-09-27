@@ -498,6 +498,18 @@ On macOS, `system` tries `terminal-notifier` first and falls back to `/usr/bin/o
 
 On Windows, `system` notifications remain in Notification Center. Clicking one selects its originating pane in the running Herdr client and brings its terminal window forward when Windows exposes that window. A click cannot reopen a closed client or select a pane from a restarted server. Windows Terminal can bring the owning window forward, but cannot reliably select a different outer terminal tab.
 
+To replace the built-in notifier, set a shell command. Herdr runs it detached with `/bin/sh -lc`, once for each notification that `system` delivery would show:
+
+```toml
+[ui.toast]
+delivery = "system"
+
+[ui.toast.system]
+command = "~/.config/herdr/notify"
+```
+
+The command receives `HERDR_NOTIFICATION_KIND` (`finished`, `needs_attention`, `update_installed`, or `custom`), `HERDR_NOTIFICATION_TITLE`, and, when present, `HERDR_NOTIFICATION_BODY` and `HERDR_NOTIFICATION_AGENT`. Notifications from the local machine also carry `HERDR_NOTIFICATION_WORKSPACE_ID`, `HERDR_NOTIFICATION_TAB_ID`, and `HERDR_NOTIFICATION_PANE_ID`; notifications from SSH machines omit them because a local `herdr` call cannot resolve remote ids. `HERDR_BIN_PATH` names the running Herdr binary, so a click handler can run `"$HERDR_BIN_PATH" agent focus "$HERDR_NOTIFICATION_PANE_ID"` to show that pane.
+
 ## Sound
 
 Sound notifications play through the local Herdr client. Custom sounds must be mp3 files; Herdr resolves relative paths from the config file's directory.

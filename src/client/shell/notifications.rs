@@ -383,6 +383,104 @@ mod tests {
         assert!(state.pending_notifications.is_empty());
     }
 
+    fn custom_notification(pane_id: &str) -> SemanticNotification {
+        let mut event = notification().event;
+        event.title = "claude finished".into();
+        event.body = Some("workflow".into());
+        event.agent = Some("claude".into());
+        event.workspace_id = Some("w1".into());
+        event.tab_id = Some("background-tab".into());
+        event.pane_id = Some(pane_id.into());
+        event
+    }
+
+    fn system_command_state(command: Option<&str>) -> ClientShellState {
+        let mut config = ClientShellConfig::from_config(&Config::default());
+        config.toast_delivery = crate::config::ToastDelivery::System;
+        config.toast_system_command = command.map(str::to_owned);
+        ClientShellState::new(config)
+    }
+
+    fn env_value<'a>(env: &'a [(String, String)], name: &str) -> Option<&'a str> {
+        env.iter()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value.as_str())
+    }
+
+    #[test]
+    fn system_command_receives_the_notification_and_local_pane_ids() {
+        let mut state = system_command_state(Some("notify-herdr"));
+
+        let (effects, _) = state.receive_notification(
+            &ClientEndpointId::Local,
+            custom_notification("w1:p2"),
+            std::time::Instant::now(),
+        );
+
+        let [ClientShellNotificationEffect::SystemCommand { command, env }] = effects.as_slice()
+        else {
+            panic!("expected one system command effect");
+        };
+        assert_eq!(command, "notify-herdr");
+        assert_eq!(env_value(env, "HERDR_NOTIFICATION_KIND"), Some("custom"));
+        assert_eq!(
+            env_value(env, "HERDR_NOTIFICATION_TITLE"),
+            Some("claude finished")
+        );
+        assert_eq!(env_value(env, "HERDR_NOTIFICATION_BODY"), Some("workflow"));
+        assert_eq!(env_value(env, "HERDR_NOTIFICATION_AGENT"), Some("claude"));
+        assert_eq!(env_value(env, "HERDR_NOTIFICATION_PANE_ID"), Some("w1:p2"));
+        assert_eq!(
+            env_value(env, "HERDR_NOTIFICATION_WORKSPACE_ID"),
+            Some("w1")
+        );
+    }
+
+    #[test]
+    fn system_command_omits_pane_ids_from_remote_endpoints() {
+        let mut state = system_command_state(Some("notify-herdr"));
+        let remote = ClientEndpointId::Ssh(
+            crate::client::endpoint::ProfileId::parse("0123456789abcdef0123456789abcdef").unwrap(),
+        );
+
+        let (effects, _) = state.receive_notification(
+            &remote,
+            custom_notification("w1:p2"),
+            std::time::Instant::now(),
+        );
+
+        let [ClientShellNotificationEffect::SystemCommand { env, .. }] = effects.as_slice() else {
+            panic!("expected one system command effect");
+        };
+        assert_eq!(
+            env_value(env, "HERDR_NOTIFICATION_TITLE"),
+            Some("claude finished")
+        );
+        for name in [
+            "HERDR_NOTIFICATION_PANE_ID",
+            "HERDR_NOTIFICATION_TAB_ID",
+            "HERDR_NOTIFICATION_WORKSPACE_ID",
+        ] {
+            assert_eq!(env_value(env, name), None, "{name}");
+        }
+    }
+
+    #[test]
+    fn system_delivery_without_command_uses_the_built_in_notifier() {
+        let mut state = system_command_state(None);
+
+        let (effects, _) = state.receive_notification(
+            &ClientEndpointId::Local,
+            custom_notification("w1:p2"),
+            std::time::Instant::now(),
+        );
+
+        assert!(matches!(
+            effects.as_slice(),
+            [ClientShellNotificationEffect::System { title, .. }] if title == "claude finished"
+        ));
+    }
+
     #[test]
     fn retiring_one_endpoint_preserves_other_endpoint_notifications() {
         let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));

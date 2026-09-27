@@ -239,11 +239,17 @@ impl ClientShellState {
                             }
                         })
                     });
-                    effects.push(ClientShellNotificationEffect::System {
-                        title: pending.event.title,
-                        body: pending.event.body,
-                        #[cfg(windows)]
-                        target,
+                    effects.push(match &self.config.toast_system_command {
+                        Some(command) => ClientShellNotificationEffect::SystemCommand {
+                            command: command.clone(),
+                            env: notification_command_env(&pending.endpoint_id, &pending.event),
+                        },
+                        None => ClientShellNotificationEffect::System {
+                            title: pending.event.title,
+                            body: pending.event.body,
+                            #[cfg(windows)]
+                            target,
+                        },
                     });
                 }
                 crate::config::ToastDelivery::Terminal | crate::config::ToastDelivery::System => {}
@@ -368,4 +374,35 @@ impl ClientShellState {
             }
         }
     }
+}
+
+/// Environment for `[ui.toast.system] command`. Ids are public ids of the
+/// sending endpoint. A local `herdr` call cannot resolve remote ids, so
+/// notifications from SSH endpoints omit them.
+fn notification_command_env(
+    endpoint_id: &ClientEndpointId,
+    event: &SemanticNotification,
+) -> Vec<(String, String)> {
+    let kind = match event.kind {
+        SemanticNotificationKind::NeedsAttention => "needs_attention",
+        SemanticNotificationKind::Finished => "finished",
+        SemanticNotificationKind::UpdateInstalled => "update_installed",
+        SemanticNotificationKind::Custom => "custom",
+    };
+    let ids = [
+        ("HERDR_NOTIFICATION_WORKSPACE_ID", &event.workspace_id),
+        ("HERDR_NOTIFICATION_TAB_ID", &event.tab_id),
+        ("HERDR_NOTIFICATION_PANE_ID", &event.pane_id),
+    ];
+    let ids = ids.into_iter().filter(|_| endpoint_id.is_local());
+    [
+        ("HERDR_NOTIFICATION_KIND", Some(kind.to_owned())),
+        ("HERDR_NOTIFICATION_TITLE", Some(event.title.clone())),
+        ("HERDR_NOTIFICATION_BODY", event.body.clone()),
+        ("HERDR_NOTIFICATION_AGENT", event.agent.clone()),
+    ]
+    .into_iter()
+    .chain(ids.map(|(name, value)| (name, value.clone())))
+    .filter_map(|(name, value)| value.map(|value| (name.to_owned(), value)))
+    .collect()
 }
