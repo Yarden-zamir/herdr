@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Added
+- Added optional `ui.toast.system.command`: with `delivery = "system"`, Herdr runs this shell command instead of the built-in OS notifier and passes the notification in `HERDR_NOTIFICATION_*` environment variables (kind, title, body, agent, and the workspace, tab, and pane ids for local notifications). A command can post a notification whose click runs `herdr agent focus "$HERDR_NOTIFICATION_PANE_ID"`.
+
 ## [0.9.3] - 2026-09-29
 
 This is a hotfix release for v0.9.2. See the v0.9.2 notes for the full feature release: https://github.com/herdrdev/herdr/releases/tag/v0.9.2

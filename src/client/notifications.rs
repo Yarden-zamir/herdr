@@ -1,4 +1,5 @@
 use std::io;
+use std::process::Stdio;
 
 use tracing::{debug, warn};
 
@@ -82,6 +83,11 @@ pub(super) fn handle_shell_notification_effects(
                     warn!(err = %err, "failed to emit system notification");
                 }
             }
+            shell::ClientShellNotificationEffect::SystemCommand { command, env } => {
+                if let Err(err) = spawn_notification_command(&command, env) {
+                    warn!(err = %err, "failed to run ui.toast.system.command");
+                }
+            }
         }
     }
 }
@@ -125,6 +131,30 @@ fn show_system_notification(
             }),
         )
     })
+}
+
+/// Run `[ui.toast.system] command` detached, like a `[[keys.command]]`
+/// shell command. A background thread reaps the child, so a slow command
+/// never blocks the client loop.
+fn spawn_notification_command(command: &str, env: Vec<(String, String)>) -> io::Result<()> {
+    let mut process = crate::platform::detached_custom_command_process(command);
+    process
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .env(
+            crate::api::SOCKET_PATH_ENV_VAR,
+            crate::api::socket_path().as_os_str(),
+        )
+        .envs(env);
+    if let Ok(current_exe) = std::env::current_exe() {
+        process.env("HERDR_BIN_PATH", current_exe);
+    }
+    let mut child = process.spawn()?;
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
 }
 
 pub(super) fn handle_notify(
@@ -223,5 +253,42 @@ mod tests {
         // This send must run while native delivery is still waiting.
         release.send(()).expect("client loop remained responsive");
         second.await.expect("replacement delivered after original");
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    #[test]
+    fn notification_command_runs_detached_with_its_environment() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let out = std::env::temp_dir().join(format!(
+            "herdr-notification-command-{}-{nanos}",
+            std::process::id()
+        ));
+        let command = format!(
+            "printf '%s|%s' \"$HERDR_NOTIFICATION_PANE_ID\" \"$HERDR_BIN_PATH\" > '{}'",
+            out.display()
+        );
+        super::spawn_notification_command(
+            &command,
+            vec![("HERDR_NOTIFICATION_PANE_ID".into(), "w1:p2".into())],
+        )
+        .unwrap();
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let written = loop {
+            match std::fs::read_to_string(&out) {
+                Ok(text) if text.contains('|') => break text,
+                _ if std::time::Instant::now() > deadline => panic!("command did not run"),
+                _ => std::thread::sleep(std::time::Duration::from_millis(20)),
+            }
+        };
+        let _ = std::fs::remove_file(&out);
+        let (pane_id, bin_path) = written.split_once('|').unwrap();
+        assert_eq!(pane_id, "w1:p2");
+        assert!(!bin_path.is_empty());
     }
 }
