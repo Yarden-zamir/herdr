@@ -6,6 +6,7 @@
 - `notification.show` and `herdr notification show` can now carry a click action: focus a pane (`--focus-pane`) or invoke a plugin action (`--plugin-action`).
 - Ctrl-click on a visible file path now reaches plugin link handlers as a `file://` URL when the path exists relative to the pane working directory; a trailing `:line` becomes a `#L<line>` fragment. Herdr itself still never opens `file://` URLs.
 - Ctrl-hover now underlines visible file paths that exist relative to the pane working directory, the same paths that Ctrl-click sends to plugin link handlers.
+- Ctrl-click link activation now retries once with the current pane content revision when the pane repainted between the click and the server lookup, so links in busy agent panes open instead of being dropped as stale.
 
 ## [0.9.3] - 2026-09-29
 
