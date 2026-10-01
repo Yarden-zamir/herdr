@@ -1157,6 +1157,12 @@
             "bottom-center",
             "bottom-right"
           ]
+        },
+        {
+          "key": "ui.toast.system.command",
+          "type": "string",
+          "default": "unset",
+          "description": "Shell command that replaces the built-in OS notifier when `delivery = \"system\"`. Herdr runs it with `/bin/sh -lc` and passes the notification in `HERDR_NOTIFICATION_*` environment variables."
         }
       ]
     },

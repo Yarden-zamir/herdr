@@ -127,6 +127,7 @@ impl ClientShellConfig {
             status_indicators: config.ui.status_indicators,
             sound_enabled: config.ui.sound.enabled,
             toast_delivery: config.ui.toast.delivery,
+            toast_system_command: config.ui.toast.system.command.clone(),
             toast_delay_seconds: config.ui.toast.delay_seconds,
             toast_position: config.ui.toast.herdr.position,
             copy_on_select: config.ui.copy_on_select,
@@ -329,6 +330,7 @@ impl ClientShellConfig {
                 self.status_indicators = ui.status_indicators;
                 self.sound_enabled = ui.sound.enabled;
                 self.toast_delivery = ui.toast.delivery;
+                self.toast_system_command = ui.toast.system.command.clone();
                 self.toast_delay_seconds = ui.toast.delay_seconds;
                 self.toast_position = ui.toast.herdr.position;
                 self.copy_on_select = ui.copy_on_select;

@@ -201,6 +201,7 @@ pub struct ToastConfig {
     pub delay_seconds: u64,
     pub herdr: HerdrToastConfig,
     pub clipboard: ClipboardToastConfig,
+    pub system: SystemToastConfig,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -214,6 +215,15 @@ pub struct HerdrToastConfig {
 pub struct ClipboardToastConfig {
     pub enabled: bool,
     pub position: ToastClipboardPosition,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(default)]
+pub struct SystemToastConfig {
+    /// Shell command that replaces the built-in OS notifier when
+    /// `delivery = "system"`. Herdr passes the notification in
+    /// `HERDR_NOTIFICATION_*` environment variables.
+    pub command: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -1270,6 +1280,7 @@ impl Default for ToastConfig {
             delay_seconds: 1,
             herdr: HerdrToastConfig::default(),
             clipboard: ClipboardToastConfig::default(),
+            system: SystemToastConfig::default(),
         }
     }
 }
@@ -1304,6 +1315,7 @@ impl<'de> Deserialize<'de> for ToastConfig {
             delay_seconds: Option<u64>,
             herdr: HerdrToastConfig,
             clipboard: ClipboardToastConfig,
+            system: SystemToastConfig,
         }
 
         let raw = RawToastConfig::deserialize(deserializer)?;
@@ -1319,11 +1331,22 @@ impl<'de> Deserialize<'de> for ToastConfig {
                 "ui.toast.delay_seconds must be between 0 and {MAX_TOAST_DELAY_SECONDS}"
             )));
         }
+        if raw
+            .system
+            .command
+            .as_deref()
+            .is_some_and(|command| command.trim().is_empty())
+        {
+            return Err(de::Error::custom(
+                "ui.toast.system.command must not be empty; remove it to use the built-in notifier",
+            ));
+        }
         Ok(Self {
             delivery,
             delay_seconds,
             herdr: raw.herdr,
             clipboard: raw.clipboard,
+            system: raw.system,
         })
     }
 }
@@ -1908,6 +1931,33 @@ position = "top-center"
             config.ui.toast.clipboard.position,
             ToastClipboardPosition::TopCenter
         );
+    }
+
+    #[test]
+    fn toast_system_command_parses_and_rejects_empty() {
+        let config: Config = toml::from_str(
+            r#"
+[ui.toast]
+delivery = "system"
+
+[ui.toast.system]
+command = "notify-herdr"
+"#,
+        )
+        .unwrap();
+        assert_eq!(
+            config.ui.toast.system.command.as_deref(),
+            Some("notify-herdr")
+        );
+        assert_eq!(Config::default().ui.toast.system.command, None);
+
+        let empty = toml::from_str::<Config>(
+            r#"
+[ui.toast.system]
+command = "  "
+"#,
+        );
+        assert!(empty.is_err());
     }
 
     #[test]
