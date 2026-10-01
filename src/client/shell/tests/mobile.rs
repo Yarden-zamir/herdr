@@ -41,6 +41,7 @@ fn navigate_update_status_uses_released_desktop_and_mobile_placement() {
             tab_id: None,
             pane_id: None,
             position: Some(crate::config::ToastHerdrPosition::BottomRight),
+            plugin_action: None,
         },
         deadline: std::time::Instant::now(),
     });

@@ -109,6 +109,18 @@ pub struct NotificationShowParams {
     pub position: Option<crate::config::ToastHerdrPosition>,
     #[serde(default, skip_serializing_if = "NotificationShowSound::is_none")]
     pub sound: NotificationShowSound,
+    /// What a click on the in-app toast does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action: Option<NotificationAction>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum NotificationAction {
+    /// Focus the pane.
+    FocusPane { pane_id: String },
+    /// Invoke a plugin action, as `plugin.action.invoke` does.
+    PluginAction { action_id: String },
 }
 
 #[derive(

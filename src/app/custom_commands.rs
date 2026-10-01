@@ -355,6 +355,7 @@ impl App {
                 context: format!("focused pane {public_pane_id}"),
                 position: None,
                 target: None,
+                plugin_action: None,
             });
         }
         Ok(())
