@@ -1150,28 +1150,47 @@ pub(super) fn url_byte_range(text: &str, clicked_byte: usize) -> Option<std::ops
 ///
 /// `text` is the whitespace-delimited token under the click, so a quoted path
 /// that contains spaces is not recognized. Revisit if the terminal link lookup
-/// starts to return whole rows again. Hover highlighting covers web URLs only:
-/// `pane.link.resolve` has no pane cwd and must not touch the filesystem on
-/// every pointer move.
+/// starts to return whole rows again.
 pub(crate) fn path_url_at_byte(
     text: &str,
     clicked_byte: usize,
     cwd: Option<&std::path::Path>,
 ) -> Option<String> {
+    let (_, path, line) = existing_path_at_byte(text, clicked_byte, cwd)?;
+    Some(file_url(&path, line))
+}
+
+/// Byte range of the existing file path around `clicked_byte`, for Ctrl-hover
+/// highlighting. Each call checks the filesystem once. Hover resolves only
+/// while Ctrl is held and only when the pointer leaves the last region, so
+/// the cost is one `canonicalize` per new token. Revisit if hover over slow
+/// network mounts stalls the server.
+pub(crate) fn path_byte_range(
+    text: &str,
+    clicked_byte: usize,
+    cwd: Option<&std::path::Path>,
+) -> Option<std::ops::Range<usize>> {
+    existing_path_at_byte(text, clicked_byte, cwd).map(|(range, _, _)| range)
+}
+
+/// The token around `clicked_byte` when it names an existing path: its byte
+/// range in `text`, the canonical path, and the `:line` suffix.
+fn existing_path_at_byte(
+    text: &str,
+    clicked_byte: usize,
+    cwd: Option<&std::path::Path>,
+) -> Option<(std::ops::Range<usize>, std::path::PathBuf, Option<u32>)> {
     let clicked_idx = text.get(..clicked_byte)?.chars().count();
     let cells = text_cells(text);
     let span = quoted_path_span_at_column(&cells, clicked_idx)
         .or_else(|| token_span_at_column(&cells, clicked_idx))?;
-    let token: String = cells[span.start..=span.end]
-        .iter()
-        .map(|cell| cell.ch)
-        .collect();
-    let (text, line) = split_line_suffix(&token);
-    let text = text.trim_end_matches(['.', ',', ';', ':']);
-    if text.is_empty() || text.starts_with('-') || !looks_like_path(text) {
+    let range = byte_index_for_cell(text, span.start)..byte_index_after_cell(text, span.end);
+    let (token, line) = split_line_suffix(text.get(range.clone())?);
+    let token = token.trim_end_matches(['.', ',', ';', ':']);
+    if token.is_empty() || token.starts_with('-') || !looks_like_path(token) {
         return None;
     }
-    let path = expand_home(text)?;
+    let path = expand_home(token)?;
     let path = if path.is_absolute() {
         path
     } else {
@@ -1179,7 +1198,7 @@ pub(crate) fn path_url_at_byte(
     };
     // canonicalize also proves the path exists.
     let path = std::fs::canonicalize(path).ok()?;
-    Some(file_url(&path, line))
+    Some((range, path, line))
 }
 
 /// Plain words are never paths: a separator, a home or dot prefix, or an
@@ -2420,6 +2439,26 @@ mod tests {
             url_from_link_target(target, Some(&root)).as_deref(),
             Some(format!("file://{}/src/main.rs#L7", root.display()).as_str())
         );
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn hover_regions_cover_existing_paths_only() {
+        let root = path_fixture();
+        let mut terminal = crate::ghostty::Terminal::new(80, 4, 1024).unwrap();
+        terminal.write(b"Update(src/main.rs:7) and missing/file.rs");
+        let regions = |col| {
+            terminal
+                .viewport_link_regions(col, 0, |text, byte| {
+                    path_byte_range(text, byte, Some(&root))
+                })
+                .unwrap()
+                .iter()
+                .map(|r| (r.row, r.start_col, r.end_col))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(regions(9), vec![(0, 7, 19)]);
+        assert_eq!(regions(30), vec![]);
         std::fs::remove_dir_all(&root).unwrap();
     }
 
