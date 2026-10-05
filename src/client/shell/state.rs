@@ -27,6 +27,7 @@ pub(crate) struct ClientShellConfig {
     pub(super) status_indicators: crate::config::StatusIndicatorStyle,
     pub(super) sound_enabled: bool,
     pub(super) toast_delivery: crate::config::ToastDelivery,
+    pub(super) toast_system_command: Option<String>,
     pub(super) toast_delay_seconds: u64,
     pub(super) toast_position: crate::config::ToastHerdrPosition,
     pub(super) copy_on_select: bool,
@@ -727,6 +728,11 @@ pub(crate) enum ClientShellNotificationEffect {
         body: Option<String>,
         #[cfg(windows)]
         target: Option<ClientSystemNotificationTarget>,
+    },
+    /// `delivery = "system"` with `[ui.toast.system] command` set.
+    SystemCommand {
+        command: String,
+        env: Vec<(String, String)>,
     },
 }
 

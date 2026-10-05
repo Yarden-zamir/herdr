@@ -381,6 +381,12 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # enabled = true
 # position = "bottom-center"
 
+# Optional shell command that replaces the built-in OS notifier when
+# delivery = "system". It receives HERDR_NOTIFICATION_KIND, _TITLE, _BODY,
+# _AGENT, and for local notifications _WORKSPACE_ID, _TAB_ID, _PANE_ID.
+[ui.toast.system]
+# command = ""
+
 # Play sounds when agents change state in background workspaces
 [ui.sound]
 # enabled = true
