@@ -1066,12 +1066,17 @@ impl AppState {
     }
 }
 
-pub(super) fn url_from_link_target(target: crate::ghostty::LinkTarget) -> Option<String> {
+/// The link behind a clicked cell: an OSC 8 hyperlink, a visible web URL, or
+/// a visible file path that exists relative to `cwd` (as a `file://` URL).
+pub(super) fn url_from_link_target(
+    target: crate::ghostty::LinkTarget,
+    cwd: Option<&std::path::Path>,
+) -> Option<String> {
     match target {
         crate::ghostty::LinkTarget::Uri(uri) => Some(uri),
-        crate::ghostty::LinkTarget::Text { text, clicked_byte } => {
-            url_at_byte(&text, clicked_byte).map(str::to_owned)
-        }
+        crate::ghostty::LinkTarget::Text { text, clicked_byte } => url_at_byte(&text, clicked_byte)
+            .map(str::to_owned)
+            .or_else(|| path_url_at_byte(&text, clicked_byte, cwd)),
     }
 }
 
@@ -1135,6 +1140,100 @@ pub(super) fn url_byte_range(text: &str, clicked_byte: usize) -> Option<std::ops
     let end = byte_index_after_cell(text, span.end);
     safe_web_url(text.get(start..end)?)?;
     Some(start..end)
+}
+
+/// A visible file path around `clicked_byte` as a `file://` URL, when the
+/// path exists. Relative paths and `~` resolve against `cwd` and the home
+/// directory. A trailing `:line[:col]` becomes a `#L<line>` fragment. Only
+/// plugin link handlers act on the result: Herdr never opens `file://` URLs
+/// itself.
+///
+/// `text` is the whitespace-delimited token under the click, so a quoted path
+/// that contains spaces is not recognized. Revisit if the terminal link lookup
+/// starts to return whole rows again. Hover highlighting covers web URLs only:
+/// `pane.link.resolve` has no pane cwd and must not touch the filesystem on
+/// every pointer move.
+pub(crate) fn path_url_at_byte(
+    text: &str,
+    clicked_byte: usize,
+    cwd: Option<&std::path::Path>,
+) -> Option<String> {
+    let clicked_idx = text.get(..clicked_byte)?.chars().count();
+    let cells = text_cells(text);
+    let span = quoted_path_span_at_column(&cells, clicked_idx)
+        .or_else(|| token_span_at_column(&cells, clicked_idx))?;
+    let token: String = cells[span.start..=span.end]
+        .iter()
+        .map(|cell| cell.ch)
+        .collect();
+    let (text, line) = split_line_suffix(&token);
+    let text = text.trim_end_matches(['.', ',', ';', ':']);
+    if text.is_empty() || text.starts_with('-') || !looks_like_path(text) {
+        return None;
+    }
+    let path = expand_home(text)?;
+    let path = if path.is_absolute() {
+        path
+    } else {
+        cwd?.join(path)
+    };
+    // canonicalize also proves the path exists.
+    let path = std::fs::canonicalize(path).ok()?;
+    Some(file_url(&path, line))
+}
+
+/// Plain words are never paths: a separator, a home or dot prefix, or an
+/// extension dot is required before the filesystem is consulted.
+fn looks_like_path(text: &str) -> bool {
+    text.contains('/')
+        || text.starts_with('~')
+        || text.starts_with('.')
+        || std::path::Path::new(text).extension().is_some()
+}
+
+/// Split `path:line[:col]`; only trailing numeric segments count.
+fn split_line_suffix(token: &str) -> (&str, Option<u32>) {
+    let mut rest = token;
+    let mut numbers = Vec::new();
+    while numbers.len() < 2 {
+        let Some((head, tail)) = rest.rsplit_once(':') else {
+            break;
+        };
+        let Ok(number) = tail.parse::<u32>() else {
+            break;
+        };
+        numbers.insert(0, number);
+        rest = head;
+    }
+    (rest, numbers.first().copied())
+}
+
+fn expand_home(text: &str) -> Option<std::path::PathBuf> {
+    match text.strip_prefix('~') {
+        None => Some(std::path::PathBuf::from(text)),
+        Some(rest) if rest.is_empty() || rest.starts_with('/') => {
+            Some(std::env::home_dir()?.join(rest.trim_start_matches('/')))
+        }
+        // `~user` forms are not expanded.
+        Some(_) => None,
+    }
+}
+
+/// `file://` URL for an absolute path, percent-encoded per RFC 3986 with
+/// `/` kept, plus a `#L<line>` fragment.
+fn file_url(path: &std::path::Path, line: Option<u32>) -> String {
+    let mut url = String::from("file://");
+    for byte in path.to_string_lossy().bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~' | b'/') {
+            url.push(byte as char);
+        } else {
+            url.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    if let Some(line) = line {
+        url.push_str(&format!("#L{line}"));
+    }
+    url
 }
 
 fn token_span_at_column(cells: &[TextCell], clicked_idx: usize) -> Option<CellSpan> {
@@ -2199,6 +2298,131 @@ mod tests {
         url_at_byte(row, row.find(click)?)
     }
 
+    /// A unique temp tree: `src/main.rs` and `Cargo.toml`.
+    fn path_fixture() -> std::path::PathBuf {
+        static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let root =
+            std::env::temp_dir().join(format!("herdr-path-links-{}-{n}", std::process::id()));
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(root.join("src/main.rs"), "").unwrap();
+        std::fs::write(root.join("Cargo.toml"), "").unwrap();
+        std::fs::canonicalize(root).unwrap()
+    }
+
+    /// `token` is the whitespace-delimited word that contains `click`, as
+    /// the terminal link lookup hands it over.
+    fn path_url(row: &str, click: &str, cwd: Option<&std::path::Path>) -> Option<String> {
+        let click_at = row.find(click)?;
+        let start = row[..click_at]
+            .rfind(char::is_whitespace)
+            .map_or(0, |i| i + 1);
+        let end = row[click_at..]
+            .find(char::is_whitespace)
+            .map_or(row.len(), |i| click_at + i);
+        path_url_at_byte(&row[start..end], click_at - start, cwd)
+    }
+
+    #[test]
+    fn visible_paths_become_file_urls_when_they_exist() {
+        let root = path_fixture();
+        let dir = root.display();
+        let cases = [
+            (
+                "see src/main.rs:12:3 now",
+                "main",
+                format!("file://{dir}/src/main.rs#L12"),
+            ),
+            (
+                "edit ./src/main.rs,",
+                "main",
+                format!("file://{dir}/src/main.rs"),
+            ),
+            (
+                "⏺ Update(Cargo.toml)",
+                "Cargo",
+                format!("file://{dir}/Cargo.toml"),
+            ),
+            (
+                &format!("⏺ Read({dir}/src/main.rs)"),
+                "main.rs",
+                format!("file://{dir}/src/main.rs"),
+            ),
+            ("cd src/", "src", format!("file://{dir}/src")),
+        ];
+        for (row, click, expected) in cases {
+            assert_eq!(
+                path_url(row, click, Some(&root)).as_deref(),
+                Some(expected.as_str()),
+                "row={row:?}"
+            );
+        }
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn quoted_paths_without_spaces_are_unwrapped() {
+        let root = path_fixture();
+        let dir = root.display();
+        assert_eq!(
+            path_url("cat 'src/main.rs'", "main", Some(&root)).as_deref(),
+            Some(format!("file://{dir}/src/main.rs").as_str())
+        );
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn visible_paths_need_a_path_shape_and_an_existing_target() {
+        let root = path_fixture();
+        let cases = [
+            ("open missing/file.rs:1", "missing"),
+            ("version 0.9.0 released", "0.9"),
+            ("run cargo test", "cargo"),
+            ("flag --src/main.rs", "main"),
+            ("word src.", "src"),
+        ];
+        for (row, click) in cases {
+            assert_eq!(path_url(row, click, Some(&root)), None, "row={row:?}");
+        }
+        // Relative paths need a cwd; absolute ones do not.
+        assert_eq!(path_url("see src/main.rs", "main", None), None);
+        let absolute = format!("see {}/Cargo.toml", root.display());
+        assert!(path_url(&absolute, "Cargo", None).is_some());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn tilde_paths_resolve_against_home() {
+        let home = std::fs::canonicalize(std::env::home_dir().unwrap()).unwrap();
+        assert_eq!(
+            path_url("cd ~/ now", "~", None).as_deref(),
+            Some(file_url(&home, None).as_str())
+        );
+        assert_eq!(path_url("mail ~bob/x", "bob", None), None);
+    }
+
+    #[test]
+    fn line_suffix_split_keeps_only_trailing_numbers() {
+        assert_eq!(split_line_suffix("a.rs:12:3"), ("a.rs", Some(12)));
+        assert_eq!(split_line_suffix("a.rs:12"), ("a.rs", Some(12)));
+        assert_eq!(split_line_suffix("a.rs"), ("a.rs", None));
+        assert_eq!(split_line_suffix("host:8080/x"), ("host:8080/x", None));
+    }
+
+    #[test]
+    fn link_target_text_falls_back_to_file_paths() {
+        let root = path_fixture();
+        let target = crate::ghostty::LinkTarget::Text {
+            text: "src/main.rs:7".into(),
+            clicked_byte: 4,
+        };
+        assert_eq!(
+            url_from_link_target(target, Some(&root)).as_deref(),
+            Some(format!("file://{}/src/main.rs#L7", root.display()).as_str())
+        );
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
     fn text_in_cell_range(row: &str, start_col: u16, end_col: u16) -> String {
         text_cells(row)
             .into_iter()
@@ -2526,10 +2750,10 @@ mod tests {
         let mut terminal = crate::ghostty::Terminal::new(20, 2, 1024 * 1024).unwrap();
         terminal.write(url.as_bytes());
         let target = terminal.viewport_link_target(0, 0).unwrap().unwrap();
-        assert_eq!(url_from_link_target(target).as_deref(), Some(url));
+        assert_eq!(url_from_link_target(target, None).as_deref(), Some(url));
         terminal.scroll_viewport_row(0);
         let target = terminal.viewport_link_target(5, 1).unwrap().unwrap();
-        assert_eq!(url_from_link_target(target).as_deref(), Some(url));
+        assert_eq!(url_from_link_target(target, None).as_deref(), Some(url));
     }
 
     #[test]
@@ -2537,15 +2761,18 @@ mod tests {
         let mut terminal = crate::ghostty::Terminal::new(80, 5, 1024 * 1024).unwrap();
         terminal.write("[文档](https://example.com/路径?q=a(b)), next".as_bytes());
         assert!(
-            url_from_link_target(terminal.viewport_link_target(1, 0).unwrap().unwrap()).is_none()
+            url_from_link_target(terminal.viewport_link_target(1, 0).unwrap().unwrap(), None)
+                .is_none()
         );
         assert_eq!(
-            url_from_link_target(terminal.viewport_link_target(7, 0).unwrap().unwrap()).as_deref(),
+            url_from_link_target(terminal.viewport_link_target(7, 0).unwrap().unwrap(), None)
+                .as_deref(),
             Some("https://example.com/路径?q=a(b)")
         );
         terminal.resize(20, 5, 0, 0).unwrap();
         assert_eq!(
-            url_from_link_target(terminal.viewport_link_target(9, 1).unwrap().unwrap()).as_deref(),
+            url_from_link_target(terminal.viewport_link_target(9, 1).unwrap().unwrap(), None)
+                .as_deref(),
             Some("https://example.com/路径?q=a(b)")
         );
         assert!(terminal.viewport_link_target(19, 4).unwrap().is_none());
@@ -2558,7 +2785,7 @@ mod tests {
         terminal.write(url.as_bytes());
         for col in 0..4 {
             let target = terminal.viewport_link_target(col, 1).unwrap().unwrap();
-            assert_eq!(url_from_link_target(target).as_deref(), Some(url));
+            assert_eq!(url_from_link_target(target, None).as_deref(), Some(url));
         }
     }
 
