@@ -1431,7 +1431,7 @@ impl Terminal {
         &self,
         x: u16,
         y: u32,
-        resolve: fn(&str, usize) -> Option<std::ops::Range<usize>>,
+        resolve: impl Fn(&str, usize) -> Option<std::ops::Range<usize>>,
     ) -> Result<Vec<LinkRegion>, Error> {
         let cols = self.cols()?;
         let rows = self.rows()?;
