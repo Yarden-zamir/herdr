@@ -42,6 +42,13 @@ pub struct AgentPromptWaitOptions {
     pub(crate) submission_deadline: Option<std::time::Instant>,
 }
 
+/// Agent-target form of `PaneSeenSetParams`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct AgentSeenSetParams {
+    pub target: String,
+    pub seen: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AgentRenameParams {
     pub target: String,
@@ -199,6 +206,9 @@ pub struct AgentInfo {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_agent: Option<String>,
     pub agent_status: AgentStatus,
+    /// False while an idle agent still shows as `done`. Missing on older servers.
+    #[serde(default = "super::common::default_true")]
+    pub seen: bool,
     #[serde(default, skip_serializing_if = "super::is_false")]
     pub screen_detection_skipped: bool,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]

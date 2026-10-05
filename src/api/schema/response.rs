@@ -97,6 +97,10 @@ pub enum ResponseResult {
     AgentInfo {
         agent: AgentInfo,
     },
+    AgentSeenSet {
+        agent: AgentInfo,
+        changed: bool,
+    },
     AgentStarted {
         agent: AgentInfo,
         argv: Vec<String>,
@@ -116,6 +120,10 @@ pub enum ResponseResult {
     },
     PaneInfo {
         pane: PaneInfo,
+    },
+    PaneSeenSet {
+        pane: PaneInfo,
+        changed: bool,
     },
     PaneList {
         panes: Vec<PaneInfo>,
