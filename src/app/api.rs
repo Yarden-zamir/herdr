@@ -1254,6 +1254,30 @@ impl App {
             .body
             .as_deref()
             .and_then(|body| sanitized_notification_text(body, 240));
+        let (target, plugin_action) = match params.action {
+            None => (None, None),
+            Some(crate::api::schema::NotificationAction::PluginAction { action_id }) => {
+                (None, Some(action_id))
+            }
+            Some(crate::api::schema::NotificationAction::FocusPane { pane_id }) => {
+                match self.resolve_public_pane(&pane_id) {
+                    Some(resolved) => (
+                        Some(crate::app::state::ToastTarget {
+                            workspace_id: resolved.workspace_id,
+                            pane_id: resolved.pane_id,
+                        }),
+                        None,
+                    ),
+                    None => {
+                        return responses::encode_error(
+                            id,
+                            "pane_not_found",
+                            format!("pane {pane_id} not found"),
+                        );
+                    }
+                }
+            }
+        };
 
         let reason = match self.state.toast_config.delivery {
             crate::config::ToastDelivery::Off => NotificationShowReason::Disabled,
@@ -1270,7 +1294,8 @@ impl App {
                         title,
                         context: body.unwrap_or_default(),
                         position: params.position,
-                        target: None,
+                        target,
+                        plugin_action,
                     });
                     self.sync_toast_deadline(previous_toast);
                     NotificationShowReason::Shown
@@ -2448,6 +2473,7 @@ mod tests {
                 workspace_id,
                 pane_id: root,
             }),
+            plugin_action: None,
         });
 
         app.handle_internal_event(AppEvent::StateChanged {

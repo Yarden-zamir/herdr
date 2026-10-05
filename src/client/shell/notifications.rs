@@ -222,6 +222,7 @@ mod tests {
                 tab_id: None,
                 pane_id: None,
                 position: None,
+                plugin_action: None,
             },
             deadline: std::time::Instant::now(),
         }
@@ -269,6 +270,7 @@ mod tests {
                 tab_id: Some("tab".into()),
                 pane_id: Some("pane".into()),
                 position: None,
+                plugin_action: None,
             },
             deadline: std::time::Instant::now() + std::time::Duration::from_secs(5),
         });
@@ -321,6 +323,7 @@ mod tests {
                 tab_id: Some("tab_1".into()),
                 pane_id: Some("pane_1".into()),
                 position: None,
+                plugin_action: None,
             },
             std::time::Instant::now(),
         );
@@ -365,6 +368,7 @@ mod tests {
             tab_id: Some("background-tab".into()),
             pane_id: Some("pane_1".into()),
             position: None,
+            plugin_action: None,
         };
 
         let (effects, _) = state.receive_notification(&ClientEndpointId::Local, event, now);
@@ -427,6 +431,7 @@ mod tests {
                     tab_id: None,
                     pane_id: Some(title.into()),
                     position: None,
+                    plugin_action: None,
                 },
                 now,
             );

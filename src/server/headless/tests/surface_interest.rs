@@ -135,6 +135,7 @@ async fn metadata_only_shell_is_isolated_until_surface_activation() {
                 tab_id: None,
                 pane_id: None,
                 position: None,
+                plugin_action: None,
             },
         ))
     );
